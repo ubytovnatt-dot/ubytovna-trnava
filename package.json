@@ -1,6 +1,6 @@
 {
-  "name": "stayhub-v3-6-5-vercel-config-fix",
-  "version": "3.6.5",
+  "name": "stayhub-v3-6-6-node24-vercel-fix",
+  "version": "3.6.6",
   "private": true,
   "type": "module",
   "scripts": {
@@ -26,6 +26,6 @@
     "vite": "5.4.11"
   },
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   }
 }
