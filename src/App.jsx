@@ -266,37 +266,12 @@ export default function UbytovnaApp() {
   async function fetchData() {
     setLoading(true); setError(null);
     try {
-      const entries = [
-        ['rooms', api('/api/rooms')],
-        ['bookings', api('/api/bookings')],
-        ['payments', api('/api/payments')],
-        ['companies', api('/api/companies')],
-        ['people', api('/api/checkin-persons')],
-        ['documents', api('/api/documents')],
-        ['stats', api('/api/stats')]
-      ];
-      const results = await Promise.allSettled(entries.map(([, promise]) => promise));
-      const data = Object.fromEntries(entries.map(([key], index) => [key, results[index].status === 'fulfilled' ? results[index].value : null]));
-      const failed = entries
-        .map(([key], index) => results[index].status === 'rejected' ? `${key}: ${results[index].reason?.message || 'chyba načítania'}` : null)
-        .filter(Boolean);
-
-      // v3.6.1: dashboard must not stay empty when one optional endpoint fails.
-      // Load every dataset independently and keep usable data visible on first page load.
-      setRooms(Array.isArray(data.rooms) ? data.rooms : []);
-      setBookings(Array.isArray(data.bookings) ? data.bookings : []);
-      setPayments(Array.isArray(data.payments) ? data.payments : []);
-      setCompanies(Array.isArray(data.companies) ? data.companies : []);
-      setPeople(Array.isArray(data.people) ? data.people : []);
-      setDocuments(Array.isArray(data.documents) ? data.documents : []);
-      setStats(data.stats && typeof data.stats === 'object' ? data.stats : {});
-
-      if (failed.length) setError(`Niektoré údaje sa nenačítali: ${failed.join(' · ')}`);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+      const [r, b, p, c, pe, d, s] = await Promise.all([
+        api('/api/rooms'), api('/api/bookings'), api('/api/payments'), api('/api/companies'), api('/api/checkin-persons'), api('/api/documents').catch(() => []), api('/api/stats')
+      ]);
+      setRooms(r || []); setBookings(b || []); setPayments(p || []); setCompanies(c || []); setPeople(pe || []); setDocuments(d || []); setStats(s || {});
+    } catch (e) { setError(e.message); }
+    setLoading(false);
   }
   useEffect(() => { if (logged) fetchData(); }, [logged, selectedPropertyId]);
   useEffect(() => { if (logged && !canAccessTab(currentRole, activeTab)) setActiveTab(roleInfo.tabs[0] || 'dashboard'); }, [logged, currentRole, activeTab]);
@@ -310,7 +285,7 @@ export default function UbytovnaApp() {
     {activeTab === 'checkout' && <CheckOut people={people} companies={companies} onRefresh={fetchData} />}
     {activeTab === 'payments' && <Payments payments={payments} bookings={bookings} companies={companies} onRefresh={fetchData} role={currentRole} />}
     {activeTab === 'companies' && <Companies companies={companies} onRefresh={fetchData} role={currentRole} />}
-    {activeTab === 'calendar' && <AuroraCalendar rooms={rooms} bookings={bookings} people={people} lang={lang} />}
+    {activeTab === 'calendar' && <AuroraCalendar rooms={rooms} bookings={bookings} people={people} />}
     {activeTab === 'documents' && <Documents documents={documents} people={people} companies={companies} onRefresh={fetchData} role={currentRole} />}
     {activeTab === 'reports' && <Reports rooms={rooms} bookings={bookings} payments={payments} people={people} companies={companies} documents={documents} />}
     {activeTab === 'settings' && <SettingsTab role={currentRole} />}
@@ -445,18 +420,12 @@ function LanguageSwitcher({ lang, setLang }) {
 
 function Dashboard({ stats, bookings, payments, people, rooms, lang='sk' }) {
   const roomOcc = rooms.map(r => ({ room: r, occ: getRoomOccupancy(r, bookings, people) }));
-
-  // v3.6.4: Dashboard must be bound to the same live datasets as Rooms/Calendar.
-  // The /api/stats endpoint can return 0 or stale values during the first load,
-  // while rooms/bookings/people are already loaded. Therefore the main dashboard
-  // counters are calculated from rooms + active bookings + checked-in people.
-  const derivedCapacity = roomOcc.reduce((s, x) => s + Number(x.occ.capacity || 0), 0);
-  const occupied = roomOcc.reduce((s, x) => s + Number(x.occ.occupied || 0), 0);
-  const reserved = roomOcc.reduce((s, x) => s + Number(x.occ.reserved || 0), 0);
+  const cap = stats.total_capacity || roomOcc.reduce((s, x) => s + x.occ.capacity, 0);
+  const occupied = roomOcc.reduce((s, x) => s + x.occ.occupied, 0);
+  const reserved = roomOcc.reduce((s, x) => s + x.occ.reserved, 0);
   const used = occupied + reserved;
-  const cap = derivedCapacity > 0 ? derivedCapacity : Math.max(0, Number(stats?.total_capacity || 0));
   const free = Math.max(0, cap - used);
-  const rate = cap ? Math.round((used / cap) * 100) : 0;
+  const rate = cap ? Math.round(used / cap * 100) : 0;
 
   const todayDate = today();
   const personDate = (p, ...keys) => {
@@ -481,7 +450,7 @@ function Dashboard({ stats, bookings, payments, people, rooms, lang='sk' }) {
     .filter(p => ['Zaplatené','paid','Đã thanh toán','Da thanh toan'].includes(p.status))
     .reduce((s,p)=>s+Number(p.amount||0),0);
 
-  return <div className="space-y-6"><h1 className="text-3xl font-bold">📊 {t('Dashboard', lang)}</h1>
+  return <div className="space-y-6"><h1 className="text-3xl font-bold">📊 {t('Dashboard v3', lang)}</h1>
     <div className="grid md:grid-cols-4 gap-4">
       <Card title={t('Obsadenosť', lang)} value={`${used}/${cap} (${rate}%)`} color="border-teal-500"/>
       <Card title={t('Voľné lôžka', lang)} value={free} color="border-green-500"/>
@@ -872,7 +841,7 @@ function FactoryResetAdmin({ onDone }){
   </div>
 }
 
-function Top({title,action,onAction,onRefresh}){return <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4"><div><h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-950">{title}</h1><p className="text-sm text-slate-500 mt-1">StayHub · Smart Accommodation Management</p></div><div className="flex gap-2 flex-wrap"><button onClick={onRefresh} className="btn-secondary">🔄 Obnoviť</button>{action&&<button onClick={onAction} className="btn-primary-soft"><Plus size={20}/>{action}</button>}</div></div>}
+function Top({title,action,onAction,onRefresh}){return <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4"><div><h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-950">{title}</h1><p className="text-sm text-slate-500 mt-1">StayHub · Smart Accommodation Management v3.32</p></div><div className="flex gap-2 flex-wrap"><button onClick={onRefresh} className="btn-secondary">🔄 Obnoviť</button>{action&&<button onClick={onAction} className="btn-primary-soft"><Plus size={20}/>{action}</button>}</div></div>}
 function Modal({title,onClose,onSave,children,wide}){return <div className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm z-50 flex items-center justify-center p-4"><div className={`modal-card bg-white rounded-3xl shadow-2xl w-full ${wide?'max-w-6xl':'max-w-xl'} max-h-[92vh] overflow-auto`}><div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/95 backdrop-blur z-10"><h2 className="text-2xl font-black tracking-tight text-slate-950">{title}</h2><button onClick={onClose} className="icon-btn"><X/></button></div><div className="p-6 space-y-5">{children}<div className="flex justify-end gap-3 pt-5 border-t border-slate-100"><button onClick={onClose} className="btn-muted">Zrušiť</button><button onClick={onSave} className="btn-save">Uložiť</button></div></div></div></div>}
 function Grid({children}){return <div className="grid md:grid-cols-2 gap-4">{children}</div>}
 function Field({label,value,onChange,type='text',placeholder,disabled}){return <label className="block"><span className="block text-sm font-bold text-slate-700 mb-1.5">{label}</span><input disabled={disabled} type={type} value={value||''} placeholder={placeholder} onChange={e=>onChange?.(e.target.value)} className="input-polish disabled:bg-slate-100"/></label>}

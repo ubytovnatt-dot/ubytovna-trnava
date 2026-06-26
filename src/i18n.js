@@ -7,17 +7,6 @@ export const LANGUAGES = [
 export const dictionaries = {
   sk: {},
   vi: {
-    "Dnes": "Hôm nay",
-    "Deň": "Ngày",
-    "Mesiac": "Tháng",
-    "Timeline": "Dòng thời gian",
-    "Predchádzajúci mesiac": "Tháng trước",
-    "Nasledujúci mesiac": "Tháng sau",
-    "Calendar": "Lịch",
-    "Aurora Calendar": "Lịch",
-    "Inteligentný plánovací kalendár pre rezervácie, ubytovanie a obsadenosť lôžok.": "Lịch thông minh quản lý đặt chỗ, lưu trú và công suất giường.",
-    "Samostatná plánovacia vrstva s interaktívnou timeline. Pri check-ine používa skutočný pobyt osoby a neťahá blok podľa pôvodného dlhého rozsahu rezervácie.": "Lịch thông minh quản lý đặt chỗ, lưu trú và công suất giường.",
-    "v3.5A.2.4: Opravené prepínanie pohľadov, výber mesiaca a navigácia kalendára.": "v3.5A.2.4: Đã sửa chuyển đổi chế độ xem, chọn tháng và điều hướng lịch.",
     "Zelené = voľné, žlté = rezervované, modré = ubytované, oranžové/červené = príchod/odchod.": "Xanh lá = trống, vàng = đã đặt, xanh dương = đang ở, cam/đỏ = nhận/trả phòng.",
     "Rezervácie, check-in osoby, platby a dokumenty boli vymazané.": "Đặt chỗ, người nhận phòng, thanh toán và giấy tờ đã được xóa.",
     "Nevymaže používateľov, firmy, izby, objekty ani nastavenia.": "Không xóa người dùng, công ty, phòng, cơ sở hoặc cài đặt.",
@@ -109,8 +98,7 @@ export const dictionaries = {
     "Izba / lôžko": "Phòng / giường",
     "Housekeeping": "Buồng phòng",
     "Dátum úhrady": "Ngày thanh toán",
-    "Dashboard v3": "Tổng quan",
-    "Dashboard": "Tổng quan",
+    "Dashboard v3": "Tổng quan v3",
     "Vytváram...": "Đang tạo...",
     "Voľné lôžka": "Giường trống",
     "Vietnamčina": "Tiếng Việt",
@@ -233,52 +221,9 @@ export const dictionaries = {
     "Typ": "Loại",
     "Nie": "Không",
     "KÓD": "MÃ",
-    "Calendar": "Lịch",
-    "Aurora Calendar": "Lịch",
-    "Samostatná plánovacia vrstva s interaktívnou timeline. Pri check-ine používa skutočný pobyt osoby a neťahá blok podľa pôvodného dlhého rozsahu rezervácie.": "Lớp lập kế hoạch riêng với timeline tương tác. Khi đã check-in, hệ thống dùng thời gian lưu trú thực tế và không kéo dài theo đặt chỗ ban đầu.",
-    "v3.5A.2.3: Aurora používa čisté preklady podľa aktívnej jazykovej mutácie.": "v3.5A.2.3: Aurora dùng đúng bản dịch theo ngôn ngữ đang chọn.",
-    "Timeline": "Timeline",
-    "Deň": "Ngày",
-    "Lôžko": "Giường",
-    "Izba": "Phòng",
-    "Lôžka spolu": "Tổng số giường",
-    "Voľné dnes": "Trống hôm nay",
-    "Príchody": "Ngày đến",
-    "Odchody": "Ngày đi",
-    "Konflikty": "Xung đột",
-    "Konflikt": "Xung đột",
-    "konflikt": "xung đột",
-    "Mesačné jednotky": "Đơn vị tháng",
-    "obsadené lôžko-dni": "số ngày-giường đã sử dụng",
-    "prekryté záznamy": "dữ liệu bị trùng",
-    "obsadenosť": "công suất",
-    "obsadené": "đã có người",
-    "záznamy": "bản ghi",
-    "Príchod dnes": "Đến hôm nay",
-    "Odchod dnes": "Đi hôm nay",
-    "Check-in osoba": "Người đã nhận phòng",
-    "V tento deň sú všetky lôžka voľné.": "Trong ngày này tất cả giường đều trống.",
-    "Po": "T2",
-    "Ut": "T3",
-    "St": "T4",
-    "Št": "T5",
-    "Pi": "T6",
-    "So": "T7",
-    "Ne": "CN",
-    "izieb": "phòng",
     "IČO": "Mã số công ty",
   },
   en: {
-    "Dnes": "Today",
-    "Deň": "Day",
-    "Mesiac": "Month",
-    "Timeline": "Timeline",
-    "Predchádzajúci mesiac": "Previous month",
-    "Nasledujúci mesiac": "Next month",
-    "Calendar": "Calendar",
-    "Aurora Calendar": "Calendar",
-    "Samostatná plánovacia vrstva s interaktívnou timeline. Pri check-ine používa skutočný pobyt osoby a neťahá blok podľa pôvodného dlhého rozsahu rezervácie.": "Standalone planning layer with an interactive timeline. After check-in, it uses the person’s real stay period and does not stretch the block according to the original long reservation range.",
-    "v3.5A.2.4: Opravené prepínanie pohľadov, výber mesiaca a navigácia kalendára.": "v3.5A.2.4: Fixed view switching, month selection and calendar navigation.",
     "Zelené = voľné, žlté = rezervované, modré = ubytované, oranžové/červené = príchod/odchod.": "Green = free, yellow = reserved, blue = checked-in, orange/red = arrival/departure.",
     "Rezervácie, check-in osoby, platby a dokumenty boli vymazané.": "Reservations, check-in people, payments and documents were deleted.",
     "Nevymaže používateľov, firmy, izby, objekty ani nastavenia.": "Does not delete users, companies, rooms, properties or settings.",
@@ -370,8 +315,7 @@ export const dictionaries = {
     "Izba / lôžko": "Room / bed",
     "Housekeeping": "Housekeeping",
     "Dátum úhrady": "Payment date",
-    "Dashboard v3": "Dashboard",
-    "Dashboard": "Dashboard",
+    "Dashboard v3": "Dashboard v3",
     "Vytváram...": "Creating...",
     "Voľné lôžka": "Free beds",
     "Vietnamčina": "Vietnamese",
@@ -494,39 +438,6 @@ export const dictionaries = {
     "Typ": "Type",
     "Nie": "No",
     "KÓD": "CODE",
-    "Calendar": "Calendar",
-    "Aurora Calendar": "Calendar",
-    "Samostatná plánovacia vrstva s interaktívnou timeline. Pri check-ine používa skutočný pobyt osoby a neťahá blok podľa pôvodného dlhého rozsahu rezervácie.": "A standalone planning layer with an interactive timeline. After check-in, it uses the person’s actual stay and does not stretch the block by the original long reservation range.",
-    "v3.5A.2.3: Aurora používa čisté preklady podľa aktívnej jazykovej mutácie.": "v3.5A.2.3: Aurora uses clean translations based on the active language version.",
-    "Timeline": "Timeline",
-    "Deň": "Day",
-    "Lôžko": "Bed",
-    "Izba": "Room",
-    "Lôžka spolu": "Total beds",
-    "Voľné dnes": "Free today",
-    "Príchody": "Arrivals",
-    "Odchody": "Departures",
-    "Konflikty": "Conflicts",
-    "Konflikt": "Conflict",
-    "konflikt": "conflict",
-    "Mesačné jednotky": "Monthly units",
-    "obsadené lôžko-dni": "occupied bed-days",
-    "prekryté záznamy": "overlapping records",
-    "obsadenosť": "occupancy",
-    "obsadené": "occupied",
-    "záznamy": "records",
-    "Príchod dnes": "Arrival today",
-    "Odchod dnes": "Departure today",
-    "Check-in osoba": "Checked-in person",
-    "V tento deň sú všetky lôžka voľné.": "All beds are free on this day.",
-    "Po": "Mon",
-    "Ut": "Tue",
-    "St": "Wed",
-    "Št": "Thu",
-    "Pi": "Fri",
-    "So": "Sat",
-    "Ne": "Sun",
-    "izieb": "rooms",
     "IČO": "Company ID",
   },
 };
@@ -541,17 +452,9 @@ function translateText(text, lang) {
   if (!text || !String(text).trim()) return text;
   let out = String(text);
   if (dict[out]) return dict[out];
-
-  // Brand-safe partial translation:
-  // short keys like "St" are used for calendar weekdays, but must never rewrite
-  // product names such as StayHub. Partial replacement is therefore limited
-  // to longer phrases only. Exact translation above still works for "St".
-  Object.entries(dict)
-    .filter(([from]) => String(from).trim().length > 2)
-    .sort((a,b)=>b[0].length-a[0].length)
-    .forEach(([from,to])=>{
-      out = out.replace(new RegExp(escapeRegExp(from),'g'), to);
-    });
+  Object.entries(dict).sort((a,b)=>b[0].length-a[0].length).forEach(([from,to])=>{
+    out = out.replace(new RegExp(escapeRegExp(from),'g'), to);
+  });
   return out;
 }
 

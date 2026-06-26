@@ -1,4 +1,4 @@
-# StayHub v3.6 – Clean Product Branding
+# StayHub v3.10.6 – Check-in Capacity Control
 
 Fix pre check-in kapacitu a duplicity.
 

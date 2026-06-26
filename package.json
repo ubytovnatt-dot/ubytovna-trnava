@@ -1,6 +1,6 @@
 {
-  "name": "stayhub-v3-6-6-node24-vercel-fix",
-  "version": "3.6.6",
+  "name": "stayhub-v3-5a-2-aurora-interactive-timeline",
+  "version": "3.5.2-aurora",
   "private": true,
   "type": "module",
   "scripts": {
@@ -26,6 +26,6 @@
     "vite": "5.4.11"
   },
   "engines": {
-    "node": "24.x"
+    "node": "20.x"
   }
 }

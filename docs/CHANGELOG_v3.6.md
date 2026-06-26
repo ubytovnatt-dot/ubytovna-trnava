@@ -1,14 +1,19 @@
-# StayHub v3.6 – Clean Product Branding
+# StayHub v3.6 Mobile Ready
 
-## Zmeny
+## Summary
+Mobile-first polish for StayHub dashboard and daily operations.
 
-- Odstránené používateľsky viditeľné interné názvy vývoja ako Aurora Calendar, Dashboard v3 a patch verzie v hero banneroch.
-- Kalendárový modul sa v UI zobrazuje jednoducho ako **Calendar / Kalendár / Lịch** podľa aktívneho jazyka.
-- Dashboard sa zobrazuje jednoducho ako **Dashboard / Prehľad / Tổng quan** bez verzie.
-- Opravený preklep brandingu, kde vietnamská skratka dňa `St -> T4` neúmyselne menila text StayHub na T4ayHub.
-- Upravený prekladový mechanizmus tak, aby krátke kalendárové skratky neprepisovali názov produktu.
-- Verzie a interné názvy ostávajú iba v dokumentácii/changelogu, nie v pracovnom UI.
+## Changes
+- Sidebar transforms into bottom mobile navigation.
+- Desktop layout remains unchanged.
+- Mobile modals open as bottom sheets.
+- Inputs use 16px font to prevent iOS zoom.
+- Tables have touch-friendly horizontal scrolling.
+- Main content has safe bottom spacing for mobile navigation.
+- Buttons and cards adjusted for phone screens.
 
-## Poznámka
+## SQL
+No SQL changes required.
 
-Interný komponent môže ďalej používať názov Aurora v kóde, ale používateľ vidí iba štandardné moduly StayHub: Dashboard a Calendar.
+## Deploy
+Upload to GitHub and redeploy on Vercel.

@@ -696,8 +696,7 @@ body {
 }
 
 .aurora-switcher button,
-.aurora-month-nav button,
-.aurora-today-button {
+.aurora-month-nav button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -713,8 +712,7 @@ body {
 }
 
 .aurora-switcher button:hover,
-.aurora-month-nav button:hover,
-.aurora-today-button:hover { transform: translateY(-1px); background: white; }
+.aurora-month-nav button:hover { transform: translateY(-1px); background: white; }
 .aurora-switcher button.is-active { background: #0f172a; color: white; border-color: #0f172a; box-shadow: 0 12px 28px rgba(15,23,42,.18); }
 
 .aurora-toolbar {
@@ -734,24 +732,6 @@ body {
   text-transform: capitalize;
   font-size: 17px;
   font-weight: 950;
-}
-
-.aurora-toolbar-group {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.aurora-toolbar-group label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 950;
-  text-transform: uppercase;
-  letter-spacing: .06em;
 }
 
 .aurora-toolbar input {
@@ -1039,18 +1019,18 @@ body {
 @media (max-width: 720px) {
   .aurora-hero { padding: 20px; border-radius: 26px; }
   .aurora-toolbar { align-items: stretch; }
-  .aurora-toolbar input, .aurora-month-nav, .aurora-legend, .aurora-toolbar-group { width: 100%; justify-content: space-between; }
+  .aurora-toolbar input, .aurora-month-nav, .aurora-legend { width: 100%; justify-content: space-between; }
   .aurora-metrics { grid-template-columns: 1fr; }
   .aurora-month-grid { gap: 6px; }
   .aurora-day { min-height: 92px; padding: 9px; border-radius: 18px; }
   .aurora-day small, .aurora-day strong { font-size: 10px; }
-  .aurora-timeline-grid { min-width: 980px; }
+  .aurora-timeline-shell { display: none; }
   .aurora-shell .aurora-mobile { display: block; }
 }
 
-/* Aurora v3.5A.2.1 – Timeline Occupancy Days */
+/* Aurora v3.5A.2 – Interactive Timeline */
 .aurora-row-track {
-  min-height: 68px;
+  min-height: 64px;
   display: grid;
   position: relative;
   padding: 9px 5px;
@@ -1060,31 +1040,9 @@ body {
 
 .aurora-row-day {
   grid-row: 1;
-  min-height: 50px;
-  border: 0;
-  border-left: 1px solid rgba(226,232,240,.60);
-  border-radius: 0;
-  opacity: .68;
-  padding: 4px;
-  font-size: 9px;
-  font-weight: 950;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: help;
-  transition: opacity 150ms ease, transform 150ms ease, filter 150ms ease;
+  min-height: 46px;
+  border-left: 1px solid rgba(226,232,240,.48);
 }
-
-.aurora-row-day:first-child { border-left: 0; }
-.aurora-row-day:hover { opacity: 1; filter: saturate(1.12); transform: translateY(-1px); }
-.aurora-row-day span { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; opacity: .56; }
-.aurora-row-day-free { background: rgba(236,253,245,.48); }
-.aurora-row-day-reserved { background: repeating-linear-gradient(135deg, rgba(254,243,199,.78), rgba(254,243,199,.78) 8px, rgba(253,230,138,.62) 8px, rgba(253,230,138,.62) 16px); }
-.aurora-row-day-occupied { background: repeating-linear-gradient(135deg, rgba(219,234,254,.86), rgba(219,234,254,.86) 8px, rgba(191,219,254,.72) 8px, rgba(191,219,254,.72) 16px); }
-.aurora-row-day-arrival { background: linear-gradient(90deg, rgba(251,146,60,.95) 0 34%, rgba(255,237,213,.82) 34%); }
-.aurora-row-day-departure { background: linear-gradient(90deg, rgba(243,232,255,.86) 0 66%, rgba(168,85,247,.86) 66%); }
-.aurora-row-day-conflict { background: repeating-linear-gradient(135deg, rgba(254,226,226,.95), rgba(254,226,226,.95) 7px, rgba(248,113,113,.78) 7px, rgba(248,113,113,.78) 14px); }
-.aurora-row-day.is-today { box-shadow: inset 0 0 0 2px rgba(15,23,42,.24); }
 
 .aurora-segment {
   grid-row: 1;
@@ -1105,8 +1063,7 @@ body {
   font-weight: 950;
   overflow: hidden;
   box-shadow: 0 10px 24px rgba(15,23,42,.10);
-  border: 1px solid rgba(255,255,255,.72);
-  opacity: .94;
+  border: 1px solid rgba(255,255,255,.66);
   transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
 }
 
@@ -1129,40 +1086,4 @@ body {
   font-size: 9px;
   opacity: .72;
   font-weight: 850;
-}
-
-/* StayHub v3.6.3 – Calendar Date Grid Fix
-   Calendar occupancy is rendered strictly day-by-day. No stretched timeline overlay. */
-.aurora-date-grid-shell .aurora-row-track-date-only {
-  position: relative;
-}
-.aurora-date-grid-shell .aurora-date-cell {
-  min-height: 58px;
-  border-radius: 0;
-  border-right: 1px solid rgba(148, 163, 184, 0.16);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 3px;
-  padding: 8px 10px;
-  overflow: hidden;
-}
-.aurora-date-grid-shell .aurora-date-cell span {
-  font-size: 11px;
-  font-weight: 800;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.aurora-date-grid-shell .aurora-date-cell em {
-  font-style: normal;
-  font-size: 10px;
-  font-weight: 700;
-  opacity: .72;
-}
-.aurora-date-grid-shell .aurora-date-cell.is-today {
-  outline: 2px solid rgba(15, 23, 42, .16);
-  outline-offset: -2px;
 }
