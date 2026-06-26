@@ -1,0 +1,1054 @@
+import express from 'express';
+import cors from 'cors';
+import { createClient } from '@supabase/supabase-js';
+
+const app = express();
+app.use(cors({ origin: true, credentials: false }));
+app.use(express.json({ limit: '10mb' }));
+
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '';
+const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const authSupabase = supabaseUrl && anonKey ? createClient(supabaseUrl, anonKey) : null;
+const hasServiceRoleKey = Boolean(serviceRoleKey) && !serviceRoleKey.startsWith('sb_publishable_');
+const adminSupabase = supabaseUrl && hasServiceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
+
+const TABLES = {
+  rooms: 'rooms',
+  bookings: 'bookings',
+  payments: 'payments',
+  companies: 'companies',
+  'checkin-persons': 'checkin_persons',
+  checkin_persons: 'checkin_persons',
+  documents: 'documents',
+  audit_logs: 'audit_logs',
+  profiles: 'profiles'
+};
+const PROPERTY_TABLES = new Set(['rooms', 'bookings', 'payments', 'companies', 'checkin_persons', 'documents']);
+
+const cancelled = new Set(['cancelled', 'canceled', 'Da huy', 'Đã hủy', 'Zrušená', 'Zrusena', 'zrušené']);
+const paid = new Set(['paid', 'Da thanh toan', 'Đã thanh toán', 'Zaplatené', 'zaplatené']);
+const cancelledStatus = new Set(['cancelled', 'canceled', 'Zrušená', 'Zrusena', 'zrušené']);
+
+function requireSupabase(req, res) {
+  if (!req.supabase) {
+    res.status(500).json({ success: false, error: 'Supabase nie je nakonfigurovaný.' });
+    return false;
+  }
+  return true;
+}
+
+function authenticatedClient(token) {
+  return createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } }
+  });
+}
+
+function tokenFrom(req) {
+  const header = req.headers.authorization || '';
+  const [scheme, token] = header.split(' ');
+  return scheme?.toLowerCase() === 'bearer' ? token : null;
+}
+
+async function loadProfile(db, user) {
+  const query = adminSupabase || db;
+  const allowedRoles = new Set(['admin', 'manager', 'reception', 'accounting', 'housekeeping', 'viewer']);
+  const email = user?.email || user?.user_metadata?.email || null;
+  const metadataRole = user?.user_metadata?.role;
+  const metadataProperty = user?.user_metadata?.property_id || 'postova-3';
+
+  let profile = null;
+  let profileError = null;
+
+  // 1) Prefer exact auth user id.
+  try {
+    const result = await query
+      .from('profiles')
+      .select('id,email,full_name,role,property_id,is_active')
+      .eq('id', user.id)
+      .maybeSingle();
+    profile = result.data || null;
+    profileError = result.error || null;
+  } catch (err) {
+    profileError = err;
+  }
+
+  // 2) Fallback by email. This fixes older profiles created manually or imported.
+  if (!profile && email) {
+    try {
+      const resultByEmail = await query
+        .from('profiles')
+        .select('id,email,full_name,role,property_id,is_active')
+        .eq('email', email)
+        .maybeSingle();
+      if (resultByEmail.data) profile = resultByEmail.data;
+      if (resultByEmail.error) profileError = resultByEmail.error;
+    } catch (err) {
+      profileError = err;
+    }
+  }
+
+  // 3) If profile exists by email but has different id, normalize it to auth.users.id.
+  // This prevents the app from reading fallback "reception" forever.
+  if (profile && String(profile.id) !== String(user.id) && adminSupabase) {
+    const normalized = {
+      ...profile,
+      id: user.id,
+      email: email || profile.email,
+      updated_at: new Date().toISOString()
+    };
+    try {
+      const { data: upserted } = await adminSupabase
+        .from('profiles')
+        .upsert(normalized, { onConflict: 'id' })
+        .select('id,email,full_name,role,property_id,is_active')
+        .maybeSingle();
+      if (upserted) profile = upserted;
+    } catch {}
+  }
+
+  // 4) Auto-create missing profile so backend can always load a role.
+  if (!profile && adminSupabase && user?.id) {
+    const fallbackRole = allowedRoles.has(metadataRole) ? metadataRole : 'reception';
+    const newProfile = {
+      id: user.id,
+      email,
+      full_name: user?.user_metadata?.full_name || email || null,
+      role: fallbackRole,
+      property_id: metadataProperty,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    try {
+      const { data: created } = await adminSupabase
+        .from('profiles')
+        .upsert(newProfile, { onConflict: 'id' })
+        .select('id,email,full_name,role,property_id,is_active')
+        .maybeSingle();
+      if (created) profile = created;
+    } catch (err) {
+      profileError = err;
+    }
+  }
+
+  // 5) Safe fallback. Do not break login only because profiles select/upsert failed.
+  const role = allowedRoles.has(profile?.role) ? profile.role : (allowedRoles.has(metadataRole) ? metadataRole : 'reception');
+
+  return {
+    id: user.id,
+    email: profile?.email || email || null,
+    full_name: profile?.full_name || user?.user_metadata?.full_name || email || null,
+    role,
+    property_id: profile?.property_id || metadataProperty || 'postova-3',
+    is_active: profile?.is_active !== false,
+    profile_loaded: Boolean(profile),
+    profile_error: profileError?.message || null
+  };
+}
+
+async function authenticateRequest(req, res, next) {
+  if (!supabaseUrl || !anonKey || !authSupabase) {
+    return res.status(500).json({ success: false, error: 'Chýba SUPABASE_URL alebo SUPABASE_ANON_KEY.' });
+  }
+  const token = tokenFrom(req);
+  if (!token) return res.status(401).json({ success: false, error: 'Chýba prihlásenie. Prihlás sa znova.' });
+  try {
+    const { data, error } = await authSupabase.auth.getUser(token);
+    if (error || !data?.user) return res.status(401).json({ success: false, error: 'Neplatné alebo expirované prihlásenie.' });
+    const db = authenticatedClient(token);
+    const profile = await loadProfile(db, data.user);
+    if (!profile.is_active) return res.status(403).json({ success: false, error: 'Používateľ je deaktivovaný.' });
+    req.user = data.user;
+    req.profile = profile;
+    req.role = profile.role;
+    req.propertyId = effectivePropertyId(req, profile);
+    req.supabase = db;
+    next();
+  } catch (err) {
+    res.status(401).json({ success: false, error: err.message || 'Prihlásenie sa nedá overiť.' });
+  }
+}
+
+function effectivePropertyId(req, profile) {
+  const requested = String(req.headers['x-property-id'] || '').trim();
+  if (profile.role === 'admin' && requested) return requested;
+  return profile.property_id || 'postova-3';
+}
+
+function scopedQuery(req, table, query) {
+  if (PROPERTY_TABLES.has(table)) return query.eq('property_id', req.propertyId);
+  return query;
+}
+
+function withProperty(req, table, payload) {
+  if (!PROPERTY_TABLES.has(table)) return payload;
+  return { ...payload, property_id: req.propertyId };
+}
+
+function nightsBetween(start, end) {
+  const diff = (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24);
+  return Math.max(1, Number.isFinite(diff) ? diff : 1);
+}
+
+function money(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function invoiceNumber(prefix = 'INV') {
+  const d = new Date();
+  const stamp = d.toISOString().slice(0, 10).replace(/-/g, '');
+  return `${prefix}-${stamp}-${String(Date.now()).slice(-6)}`;
+}
+
+async function calculateBookingPricing(db, payload) {
+  const beds = normalizeBeds(payload);
+  const nights = nightsBetween(payload.check_in_date, payload.check_out_date);
+  const roomIds = [...new Set(beds.map(b => b.room_id).filter(Boolean))];
+  let rooms = [];
+  if (roomIds.length) {
+    const { data, error } = await db.from('rooms').select('id,price_daily,price_monthly').in('id', roomIds);
+    if (error) throw error;
+    rooms = data || [];
+  }
+  const roomById = new Map(rooms.map(r => [String(r.id), r]));
+  const fallbackDaily = Number(payload.unit_price || 18);
+  const pricingModel = payload.pricing_model || 'daily';
+  const subtotal = beds.reduce((sum, bed) => {
+    const room = roomById.get(String(bed.room_id));
+    const daily = Number(room?.price_daily || fallbackDaily);
+    const monthly = Number(room?.price_monthly || daily * 30);
+    return sum + (pricingModel === 'monthly' ? (monthly / 30) * nights : daily * nights);
+  }, 0);
+  const discount = money(payload.discount_amount || 0);
+  const taxRate = Number(payload.tax_rate || 0);
+  const taxable = Math.max(0, subtotal - discount);
+  const taxAmount = money(taxable * taxRate / 100);
+  return {
+    pricing_model: pricingModel,
+    currency: payload.currency || 'EUR',
+    subtotal_price: money(subtotal),
+    discount_amount: discount,
+    tax_rate: taxRate,
+    tax_amount: taxAmount,
+    total_price: money(taxable + taxAmount)
+  };
+}
+
+function cancellationFee(payload) {
+  if (!cancelledStatus.has(payload.status)) return payload.cancellation_fee || 0;
+  if (payload.cancellation_fee !== undefined && payload.cancellation_fee !== null && payload.cancellation_fee !== '') return Number(payload.cancellation_fee || 0);
+  const today = new Date().toISOString().slice(0, 10);
+  const daysBeforeArrival = Math.ceil((new Date(payload.check_in_date) - new Date(today)) / (1000 * 60 * 60 * 24));
+  const total = Number(payload.total_price || 0);
+  if (daysBeforeArrival >= 7) return 0;
+  if (daysBeforeArrival >= 2) return money(total * 0.25);
+  return money(total * 0.5);
+}
+
+async function writeAudit(req, table, action, recordId, oldData, newData) {
+  const db = adminSupabase || req.supabase;
+  if (!db || table === 'audit_logs') return;
+  try {
+    await db.from('audit_logs').insert({
+      property_id: req.propertyId,
+      user_id: req.user?.id || null,
+      user_email: req.profile?.email || req.user?.email || null,
+      table_name: table,
+      record_id: recordId ? String(recordId) : null,
+      action,
+      old_data: oldData || null,
+      new_data: newData || null
+    });
+  } catch {
+    // Audit must never break the operational booking flow.
+  }
+}
+
+function requireRoles(req, res, roles) {
+  if (!roles.includes(req.role)) {
+    res.status(403).json({ success: false, error: 'Na túto akciu nemáš oprávnenie.' });
+    return false;
+  }
+  return true;
+}
+
+function canUseTable(role, table, action) {
+  const rules = {
+    rooms: {
+      read: ['admin','manager','reception','housekeeping','viewer'],
+      write: ['admin','manager','housekeeping'],
+      delete: ['admin']
+    },
+    bookings: {
+      read: ['admin','manager','reception','viewer'],
+      write: ['admin','manager','reception'],
+      delete: ['admin']
+    },
+    payments: {
+      read: ['admin','manager','reception','accounting'],
+      write: ['admin','manager','reception','accounting'],
+      delete: ['admin']
+    },
+    companies: {
+      read: ['admin','manager','reception','accounting'],
+      write: ['admin','manager'],
+      delete: ['admin']
+    },
+    checkin_persons: {
+      read: ['admin','manager','reception','housekeeping'],
+      write: ['admin','manager','reception','housekeeping'],
+      delete: ['admin']
+    },
+    documents: {
+      read: ['admin','manager'],
+      write: ['admin','manager'],
+      delete: ['admin']
+    },
+    audit_logs: {
+      read: ['admin'],
+      write: ['admin'],
+      delete: ['admin']
+    },
+    profiles: {
+      read: ['admin'],
+      write: ['admin'],
+      delete: ['admin']
+    }
+  };
+  return Boolean(rules[table]?.[action]?.includes(role));
+}
+
+function orderBy(table) {
+  if (table === 'rooms') return ['room_number', true];
+  if (table === 'companies') return ['company_name', true];
+  if (table === 'bookings') return ['check_in_date', false];
+  if (table === 'payments') return ['payment_month', false];
+  if (table === 'checkin_persons') return ['checkin_at', false];
+  if (table === 'documents') return ['expiry_date', true];
+  return ['created_at', false];
+}
+
+function overlaps(aStart, aEnd, bStart, bEnd) {
+  return String(aStart) < String(bEnd) && String(aEnd) > String(bStart);
+}
+
+function dateOnly(value) {
+  return value ? String(value).slice(0, 10) : null;
+}
+
+function validateStayDatesAgainstBooking(payload, booking) {
+  const start = dateOnly(booking?.check_in_date || booking?.check_in);
+  const end = dateOnly(booking?.check_out_date || booking?.check_out);
+  if (!start || !end) return;
+
+  const checkinDate = dateOnly(payload.checkin_at || payload.checked_in_at || payload.actual_check_in);
+  if (checkinDate) {
+    if (checkinDate < start) {
+      throw new Error(`Check-in je možný najskôr v prvý deň rezervácie (${start}).`);
+    }
+    if (checkinDate > end) {
+      throw new Error(`Check-in nie je možný po poslednom dni rezervácie (${end}).`);
+    }
+  }
+
+  const checkoutDate = dateOnly(payload.checkout_at || payload.actual_check_out);
+  if (checkoutDate) {
+    if (checkoutDate < start) {
+      throw new Error(`Check-out nie je možný pred začiatkom rezervácie (${start}).`);
+    }
+    if (checkoutDate > end) {
+      throw new Error(`Check-out je možný najneskôr v posledný deň rezervácie (${end}).`);
+    }
+  }
+}
+
+function normalizeBeds(b) {
+  let beds = [];
+  if (Array.isArray(b?.reserved_beds)) beds = b.reserved_beds;
+  else if (typeof b?.reserved_beds === 'string') {
+    try { beds = JSON.parse(b.reserved_beds); } catch { beds = []; }
+  }
+  if ((!beds || beds.length === 0) && b?.room_id && b?.bed_code) beds = [{ room_id: b.room_id, bed_code: String(b.bed_code) }];
+  return beds || [];
+}
+
+function looksLikeUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
+
+function cleanPayload(table, payload) {
+  const out = { ...payload };
+  const nullableDates = ['due_date','paid_date','check_in_date','check_out_date','actual_check_in','actual_check_out','checkin_at','checkout_at','expected_checkout_date','date_of_birth','issue_date','expiry_date'];
+  nullableDates.forEach(k => { if (out[k] === '') out[k] = null; });
+  ['company_id','booking_id','room_id','guest_id'].forEach(k => { if (out[k] === '') out[k] = null; });
+  if (table === 'payments') {
+    if (!out.payment_code) delete out.payment_code;
+    if (out.amount === '') delete out.amount;
+    if (out.amount !== undefined && out.amount !== null && out.amount !== '') out.amount = Number(out.amount);
+
+    // Normalize localized UI statuses into canonical DB values.
+    const paidStatuses = new Set(['Zaplatené','paid','Đã thanh toán','Da thanh toan']);
+    const pendingStatuses = new Set(['Čaká','Caka','pending','Đang chờ','Dang cho']);
+    const overdueStatuses = new Set(['Po splatnosti','overdue','Quá hạn','Qua han']);
+
+    if (paidStatuses.has(out.status)) out.status = 'Zaplatené';
+    else if (pendingStatuses.has(out.status)) out.status = 'Čaká';
+    else if (overdueStatuses.has(out.status)) out.status = 'Po splatnosti';
+
+    if (out.status === 'Zaplatené') {
+      if (!out.paid_date) out.paid_date = new Date().toISOString().slice(0, 10);
+      if (!out.paid_at) out.paid_at = new Date().toISOString();
+    } else {
+      if (out.paid_date === '') out.paid_date = null;
+      if (out.paid_at === '') out.paid_at = null;
+    }
+  }
+  if (table === 'bookings') {
+    if (out.check_in_date && !out.check_in) out.check_in = out.check_in_date;
+    if (out.check_out_date && !out.check_out) out.check_out = out.check_out_date;
+    if (out.email && !out.guest_email) out.guest_email = out.email;
+    if (out.phone && !out.guest_phone) out.guest_phone = out.phone;
+    ['requested_beds'].forEach(k => { if (out[k] !== undefined && out[k] !== null && out[k] !== '') out[k] = Number(out[k]); });
+    ['total_price','subtotal_price','discount_amount','tax_rate','tax_amount','cancellation_fee','unit_price'].forEach(k => {
+      if (out[k] === '') delete out[k];
+      else if (out[k] !== undefined && out[k] !== null) out[k] = Number(out[k]);
+    });
+  }
+  if (table === 'bookings' && out.payer_type === 'person') {
+    out.company_id = null;
+    out.company_name = null;
+  }
+  if (table === 'checkin_persons') {
+    if (out.passport_no && !out.document_number) out.document_number = out.passport_no;
+    if (out.document_number && !out.passport_no) out.passport_no = out.document_number;
+    if (out.date_of_birth && !out.birth_date) out.birth_date = out.date_of_birth;
+    if (out.birth_date && !out.date_of_birth) out.date_of_birth = out.birth_date;
+    if (out.checked_in_at && !out.checkin_at) out.checkin_at = out.checked_in_at;
+    if (out.checkin_at && !out.checked_in_at) out.checked_in_at = out.checkin_at;
+    if (!out.full_name) {
+      out.full_name = `${out.first_name || ''} ${out.last_name || ''}`.trim() || null;
+    }
+  }
+  return out;
+}
+
+function stripTransientFields(table, payload) {
+  const out = { ...payload };
+  if (table === 'checkin_persons') {
+    // Frontend-only fields used only for API validation. They do not exist
+    // in the Supabase checkin_persons table and must not be inserted/updated.
+    delete out.booking_capacity;
+    delete out.requested_beds;
+    delete out.beds_count;
+    delete out.reserved_beds;
+  }
+  if (table === 'payments') {
+    // Payment form uses reservation-derived display fields. Keep only columns that exist in payments.
+    delete out.booking;
+    delete out.company;
+    delete out.reservation;
+    delete out.reserved_beds;
+    delete out.beds_count;
+    delete out.booking_capacity;
+  }
+  return out;
+}
+
+app.get('/api', (_req, res) => res.json({ success: true, name: 'StayHub API v3.32' }));
+app.get('/api/health', (_req, res) => res.json({
+  success: true,
+  status: 'OK',
+  supabaseConfigured: Boolean(supabaseUrl && anonKey),
+  serviceRoleConfigured: Boolean(adminSupabase)
+}));
+app.get('/api/auth/status', (_req, res) => {
+  const hasSupabaseUrl = Boolean(supabaseUrl);
+  const hasAnonKey = Boolean(anonKey);
+  const hasRedirectUrl = Boolean(process.env.AUTH_REDIRECT_URL);
+  const inviteReady = Boolean(adminSupabase && hasSupabaseUrl && hasAnonKey);
+  let message = 'Pozvánky sú pripravené.';
+  if (!hasSupabaseUrl) message = 'Chýba SUPABASE_URL alebo VITE_SUPABASE_URL vo Verceli.';
+  else if (!hasAnonKey) message = 'Chýba SUPABASE_ANON_KEY alebo VITE_SUPABASE_ANON_KEY vo Verceli.';
+  else if (!hasServiceRoleKey) message = 'Chýba serverový SUPABASE_SERVICE_ROLE_KEY. Nepoužívaj VITE_SUPABASE_ANON_KEY ani publishable key.';
+  else if (!hasRedirectUrl) message = 'AUTH_REDIRECT_URL nie je nastavený. Pozvánky môžu fungovať, ale odporúčame ho doplniť.';
+  res.json({ success: true, data: { hasSupabaseUrl, hasAnonKey, hasServiceRoleKey, hasRedirectUrl, inviteReady, message } });
+});
+
+app.use('/api', authenticateRequest);
+
+app.get('/api/me', (req, res) => {
+  res.json({ success: true, data: { ...req.profile, active_property_id: req.propertyId } });
+});
+
+app.get('/api/stats', async (req, res) => {
+  if (!requireSupabase(req, res)) return;
+  try {
+    const db = req.supabase;
+    const [{ data: rooms, error: re }, { data: bookings, error: be }, { data: payments, error: pe }, { data: people, error: ce }] = await Promise.all([
+      scopedQuery(req, 'rooms', db.from('rooms').select('id,capacity')),
+      scopedQuery(req, 'bookings', db.from('bookings').select('*')),
+      scopedQuery(req, 'payments', db.from('payments').select('*')),
+      scopedQuery(req, 'checkin_persons', db.from('checkin_persons').select('*'))
+    ]);
+    if (re) throw re; if (be) throw be; if (pe) throw pe; if (ce) throw ce;
+    const today = new Date().toISOString().slice(0, 10);
+    const activeBookings = (bookings || []).filter(b => !cancelled.has(b.status));
+    const currentBookings = activeBookings.filter(b => b.check_in_date <= today && b.check_out_date > today);
+    const reservedBedsNow = currentBookings.reduce((s, b) => s + normalizeBeds(b).length, 0);
+    const checkedInNow = (people || []).filter(p => p.status === 'checked_in').length;
+    const paidPayments = (payments || []).filter(p => paid.has(p.status));
+    const pending = (payments || []).filter(p => !paid.has(p.status));
+    const overdue = pending.filter(p => p.due_date && p.due_date < today);
+    res.json({ success: true, data: {
+      total_rooms: rooms?.length || 0,
+      total_capacity: (rooms || []).reduce((s, r) => s + Number(r.capacity || 0), 0),
+      reserved_beds_now: reservedBedsNow,
+      checked_in_now: checkedInNow,
+      unpaid_payments: pending.length,
+      overdue_payments: overdue.length,
+      total_revenue: paidPayments.reduce((s, p) => s + Number(p.amount || 0), 0)
+    }});
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.get('/api/availability', async (req, res) => {
+  if (!requireSupabase(req, res)) return;
+  const { check_in_date, check_out_date, exclude_id } = req.query;
+  if (!check_in_date || !check_out_date) return res.status(400).json({ success: false, error: 'Chýba termín.' });
+  try {
+    const db = req.supabase;
+    const [{ data: rooms, error: re }, { data: bookings, error: be }] = await Promise.all([
+      scopedQuery(req, 'rooms', db.from('rooms').select('*')).order('room_number', { ascending: true }),
+      scopedQuery(req, 'bookings', db.from('bookings').select('*'))
+    ]);
+    if (re) throw re; if (be) throw be;
+    const used = new Set();
+    (bookings || [])
+      .filter(b => String(b.id) !== String(exclude_id || '') && !cancelled.has(b.status) && overlaps(check_in_date, check_out_date, b.check_in_date, b.check_out_date))
+      .forEach(b => normalizeBeds(b).forEach(x => used.add(`${x.room_id}:${x.bed_code}`)));
+    const availability = (rooms || []).map(r => {
+      const cap = Number(r.capacity || 3);
+      const beds = Array.from({ length: cap }, (_, i) => String(i + 1)).map(code => ({
+        room_id: r.id,
+        room_number: r.room_number,
+        room_label: `P${String(r.room_number).padStart(3, '0')}`,
+        bed_code: code,
+        is_free: !used.has(`${r.id}:${code}`)
+      }));
+      return { ...r, room_label: `P${String(r.room_number).padStart(3, '0')}`, beds, free_count: beds.filter(b => b.is_free).length };
+    });
+    res.json({ success: true, data: availability, total_free: availability.reduce((s, r) => s + r.free_count, 0) });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+
+app.post('/api/auth/invite-user', async (req, res) => {
+  if (!requireRoles(req, res, ['admin'])) return;
+  const { email, full_name, role = 'reception', property_id = 'postova-3', redirect_to } = req.body || {};
+  if (!email) return res.status(400).json({ success: false, error: 'Chýba email používateľa.' });
+  if (!adminSupabase) {
+    return res.status(500).json({
+      success: false,
+      error: 'Pozvánky nie sú nakonfigurované. Vo Verceli nastav SUPABASE_SERVICE_ROLE_KEY, nie anon/publishable key, a sprav redeploy.'
+    });
+  }
+  const allowed = new Set(['admin', 'manager', 'reception', 'accounting', 'housekeeping', 'viewer']);
+  const safeRole = allowed.has(role) ? role : 'reception';
+  try {
+    const { data, error } = await adminSupabase.auth.admin.inviteUserByEmail(email, {
+      redirectTo: redirect_to || process.env.AUTH_REDIRECT_URL || undefined,
+      data: { full_name: full_name || '', role: safeRole, property_id }
+    });
+    if (error) {
+      if (String(error.message || '').toLowerCase().includes('user not allowed')) {
+        return res.status(403).json({
+          success: false,
+          error: 'User not allowed: Supabase odmietol admin invite. Skontroluj, že SUPABASE_SERVICE_ROLE_KEY je skutočný service_role key a po zmene bol projekt redeploynutý.'
+        });
+      }
+      throw error;
+    }
+    const invitedUser = data?.user || null;
+    if (!invitedUser?.id) throw new Error('Supabase nevrátil ID pozvaného používateľa.');
+    const profile = {
+      id: invitedUser.id,
+      email,
+      full_name: full_name || null,
+      role: safeRole,
+      property_id: property_id || 'postova-3',
+      is_active: true,
+      invited_at: new Date().toISOString()
+    };
+    const { data: savedProfile, error: pe } = await adminSupabase
+      .from('profiles')
+      .upsert(profile, { onConflict: 'id' })
+      .select('*')
+      .single();
+    if (pe) throw pe;
+    res.status(201).json({ success: true, data: savedProfile, invited: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.put('/api/profiles/:id/role', async (req, res) => {
+  if (!requireSupabase(req, res)) return;
+  if (!requireRoles(req, res, ['admin'])) return;
+  const { role, property_id, is_active, full_name } = req.body || {};
+  const allowed = new Set(['admin', 'manager', 'reception', 'accounting', 'housekeeping', 'viewer']);
+  const payload = { updated_at: new Date().toISOString() };
+  if (role) payload.role = allowed.has(role) ? role : 'reception';
+  if (property_id !== undefined) payload.property_id = property_id;
+  if (is_active !== undefined) payload.is_active = Boolean(is_active);
+  if (full_name !== undefined) payload.full_name = full_name;
+  try {
+    const db = adminSupabase || req.supabase;
+    const { data, error } = await db.from('profiles').update(payload).eq('id', req.params.id).select('*').single();
+    if (error) throw error;
+    res.json({ success: true, data });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+
+app.post('/api/auth/create-user', async (req, res) => {
+  if (!requireRoles(req, res, ['admin'])) return;
+  const { email, password, full_name, role = 'reception', property_id = 'postova-3', is_active = true } = req.body || {};
+  if (!email) return res.status(400).json({ success: false, error: 'Chýba email používateľa.' });
+  if (!password || String(password).length < 6) return res.status(400).json({ success: false, error: 'Heslo musí mať aspoň 6 znakov.' });
+  if (!adminSupabase) return res.status(500).json({ success: false, error: 'Vytvorenie používateľa vyžaduje SUPABASE_SERVICE_ROLE_KEY vo Verceli.' });
+
+  const allowed = new Set(['admin', 'manager', 'reception', 'accounting', 'housekeeping', 'viewer']);
+  const safeRole = allowed.has(role) ? role : 'reception';
+
+  try {
+    const { data, error } = await adminSupabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: full_name || '', role: safeRole, property_id: property_id || 'postova-3' }
+    });
+    if (error) throw error;
+    const createdUser = data?.user;
+    if (!createdUser?.id) throw new Error('Supabase nevrátil ID vytvoreného používateľa.');
+
+    const profile = {
+      id: createdUser.id,
+      email,
+      full_name: full_name || null,
+      role: safeRole,
+      property_id: property_id || 'postova-3',
+      is_active: is_active !== false,
+      updated_at: new Date().toISOString()
+    };
+
+    const { data: savedProfile, error: pe } = await adminSupabase
+      .from('profiles')
+      .upsert(profile, { onConflict: 'id' })
+      .select('*')
+      .single();
+    if (pe) throw pe;
+
+    res.status(201).json({ success: true, data: savedProfile, created: true });
+  } catch (err) {
+    const msg = String(err.message || '');
+    if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already exists')) {
+      return res.status(409).json({ success: false, error: 'Používateľ s týmto emailom už existuje.' });
+    }
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
+app.put('/api/auth/users/:id/password', async (req, res) => {
+  if (!requireRoles(req, res, ['admin'])) return;
+  const { password } = req.body || {};
+  if (!password || String(password).length < 6) return res.status(400).json({ success: false, error: 'Heslo musí mať aspoň 6 znakov.' });
+  if (!adminSupabase) return res.status(500).json({ success: false, error: 'Zmena hesla vyžaduje SUPABASE_SERVICE_ROLE_KEY.' });
+  try {
+    const { data, error } = await adminSupabase.auth.admin.updateUserById(req.params.id, { password });
+    if (error) throw error;
+    res.json({ success: true, data: { id: data?.user?.id, email: data?.user?.email } });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.delete('/api/auth/users/:id', async (req, res) => {
+  if (!requireRoles(req, res, ['admin'])) return;
+  if (!adminSupabase) return res.status(500).json({ success: false, error: 'Vymazanie používateľa vyžaduje SUPABASE_SERVICE_ROLE_KEY.' });
+  try {
+    await adminSupabase.from('profiles').delete().eq('id', req.params.id);
+    const { error } = await adminSupabase.auth.admin.deleteUser(req.params.id);
+    if (error) throw error;
+    res.json({ success: true, data: { id: req.params.id } });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+
+
+app.post('/api/admin/factory-reset', async (req, res) => {
+  if (!requireRoles(req, res, ['admin'])) return;
+  const { confirm } = req.body || {};
+  if (confirm !== 'RESET') return res.status(400).json({ success: false, error: 'Pre potvrdenie napíšte RESET.' });
+  if (!adminSupabase) return res.status(500).json({ success: false, error: 'Factory Reset vyžaduje SUPABASE_SERVICE_ROLE_KEY.' });
+  try {
+    const db = adminSupabase;
+    const propertyId = req.propertyId || 'postova-3';
+    for (const table of ['documents','checkin_persons','payments','bookings']) {
+      const { error } = await db.from(table).delete().eq('property_id', propertyId);
+      if (error) throw error;
+    }
+    try { await db.from('rooms').update({ occupied_beds: 0, status: 'Voľná', updated_at: new Date().toISOString() }).eq('property_id', propertyId); } catch {}
+    res.json({ success: true, data: { property_id: propertyId, reset: true } });
+  } catch (err) { res.status(500).json({ success: false, error: err.message || 'Factory Reset zlyhal.' }); }
+});
+
+app.get('/api/:table', async (req, res) => {
+  if (!requireSupabase(req, res)) return;
+  const table = TABLES[req.params.table];
+  if (!table) return res.status(404).json({ success: false, error: 'Neznáma tabuľka' });
+  if (!canUseTable(req.role, table, 'read')) return res.status(403).json({ success: false, error: 'Na túto tabuľku nemáš oprávnenie.' });
+  try {
+    const db = req.supabase;
+    const [col, asc] = orderBy(table);
+    const { data, error } = await scopedQuery(req, table, db.from(table).select('*')).order(col, { ascending: asc });
+    if (error) throw error;
+    res.json({ success: true, data: data || [] });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+async function validateBookingBeds(req, db, payload, excludeId) {
+  const beds = normalizeBeds(payload);
+  if (!payload.check_in_date || !payload.check_out_date || beds.length === 0) return null;
+  const { data, error } = await scopedQuery(req, 'bookings', db.from('bookings').select('*'));
+  if (error) throw error;
+  const wanted = new Set(beds.map(b => `${b.room_id}:${b.bed_code}`));
+  const conflicts = (data || [])
+    .filter(b => String(b.id) !== String(excludeId || '') && !cancelled.has(b.status) && overlaps(payload.check_in_date, payload.check_out_date, b.check_in_date, b.check_out_date))
+    .filter(b => normalizeBeds(b).some(x => wanted.has(`${x.room_id}:${x.bed_code}`)));
+  return conflicts.length ? conflicts : null;
+}
+
+
+async function validateCheckinPerson(req, db, payload, existingId = null) {
+  if (!payload.booking_id) throw new Error('Check-in musí byť priradený k rezervácii.');
+
+  const bookingRef = String(payload.booking_id);
+  const bookingColumn = looksLikeUuid(bookingRef) ? 'id' : 'booking_code';
+
+  let { data: bookingRows, error: bookingError } = await db
+    .from('bookings')
+    .select('*')
+    .eq(bookingColumn, bookingRef)
+    .limit(1);
+
+  if (!bookingError && (!bookingRows || bookingRows.length === 0) && bookingColumn === 'id') {
+    const fallback = await db
+      .from('bookings')
+      .select('*')
+      .eq('booking_code', bookingRef)
+      .limit(1);
+    bookingRows = fallback.data;
+    bookingError = fallback.error;
+  }
+
+  if (bookingError) throw bookingError;
+
+  // If RLS or older data prevents reading the full booking row, never fall back to capacity 1
+  // when the frontend sends known booking capacity.
+  const payloadCapacity = Number(
+    payload.booking_capacity ||
+    payload.requested_beds ||
+    payload.beds_count ||
+    0
+  );
+
+  const booking = bookingRows?.[0] || (looksLikeUuid(bookingRef) ? {
+    id: bookingRef,
+    property_id: req.propertyId,
+    requested_beds: payloadCapacity || 1,
+    beds_count: payloadCapacity || 1,
+    reserved_beds: payload.reserved_beds || [{ room_id: payload.room_id, bed_code: String(payload.bed_code) }]
+  } : null);
+
+  if (!booking || (booking.property_id && booking.property_id !== req.propertyId)) {
+    throw new Error(`Rezervacia pre check-in sa nenasla v aktualnom objekte. ref=${bookingRef}; property=${req.propertyId}`);
+  }
+
+  payload.booking_id = booking.id;
+
+  // v3.24: Check-in/check-out date boundaries.
+  // Check-in is not allowed before the first reservation day.
+  // Check-out is not allowed after the last reservation day.
+  validateStayDatesAgainstBooking(payload, booking);
+
+  const beds = normalizeBeds(booking);
+  const requestedCapacity = Number(
+    booking.requested_beds ||
+    booking.beds_count ||
+    payloadCapacity ||
+    0
+  );
+
+  const { data: activePeople, error: peopleError } = await scopedQuery(req, 'checkin_persons', db
+    .from('checkin_persons')
+    .select('*')
+  )
+    .eq('booking_id', payload.booking_id)
+    .eq('status', 'checked_in');
+
+  if (peopleError) throw peopleError;
+
+  const existingActiveCount = new Set((activePeople || []).map(p => `${String(p.room_id)}:${String(p.bed_code)}`)).size;
+
+  // Final capacity must never shrink to 1 for legacy/group bookings.
+  const capacity = Math.max(
+    beds.length,
+    requestedCapacity,
+    payloadCapacity,
+    existingActiveCount,
+    1
+  );
+
+  if (capacity <= 0) {
+    throw new Error('Rezervácia nemá pridelené lôžka. Najprv prideľ lôžka v rezervácii.');
+  }
+
+  const bedKey = `${String(payload.room_id)}:${String(payload.bed_code)}`;
+  const reservedBedKeys = new Set(beds.map(b => `${String(b.room_id)}:${String(b.bed_code)}`));
+  const existingBedKeys = new Set((activePeople || []).map(p => `${String(p.room_id)}:${String(p.bed_code)}`));
+
+  // Strict bed validation only when reserved_beds is complete.
+  // If reserved_beds is incomplete but requested_beds says capacity is larger, allow
+  // existing checked-in beds and submitted beds while still enforcing capacity.
+  const reservedIncomplete = beds.length < capacity;
+  if (!reservedBedKeys.has(bedKey) && !reservedIncomplete && !existingBedKeys.has(bedKey)) {
+    throw new Error('Toto lôžko nepatrí do vybranej rezervácie.');
+  }
+
+  const sameBed = (activePeople || []).find(p =>
+    String(p.id) !== String(existingId || '') &&
+    String(p.room_id) === String(payload.room_id) &&
+    String(p.bed_code) === String(payload.bed_code)
+  );
+
+  if (sameBed) {
+    return { mode: 'updateExistingBed', existing: sameBed, booking, capacity };
+  }
+
+  const uniqueBeds = new Set((activePeople || [])
+    .filter(p => String(p.id) !== String(existingId || ''))
+    .map(p => `${String(p.room_id)}:${String(p.bed_code)}`));
+
+  uniqueBeds.add(bedKey);
+
+  if (uniqueBeds.size > capacity) {
+    throw new Error(`Počet check-in osôb prekračuje kapacitu rezervácie (${capacity}).`);
+  }
+
+  return { mode: 'insertOrUpdate', booking, capacity };
+}
+
+app.post('/api/:table', async (req, res) => {
+  if (!requireSupabase(req, res)) return;
+  const table = TABLES[req.params.table];
+  if (!table) return res.status(404).json({ success: false, error: 'Neznáma tabuľka' });
+  if (!canUseTable(req.role, table, 'write')) return res.status(403).json({ success: false, error: 'Na vytvorenie záznamu nemáš oprávnenie.' });
+  try {
+    const db = adminSupabase || req.supabase;
+    let payload = withProperty(req, table, cleanPayload(table, { ...req.body }));
+    if (table === 'bookings') {
+      if (!payload.booking_code) payload.booking_code = `R${Date.now()}`;
+      if (!payload.requested_beds) payload.requested_beds = normalizeBeds(payload).length || 1;
+      Object.assign(payload, await calculateBookingPricing(db, payload));
+      if (cancelledStatus.has(payload.status)) {
+        payload.cancelled_at = payload.cancelled_at || new Date().toISOString();
+        payload.cancellation_fee = cancellationFee(payload);
+      }
+      const conflicts = await validateBookingBeds(req, db, payload);
+      if (conflicts) return res.status(409).json({ success: false, error: 'KONFLIKT DÁTUMOV: niektoré pridelené lôžko je v tomto termíne už rezervované.', conflicts });
+    }
+    if (table === 'payments') {
+      if (!payload.payment_code) payload.payment_code = `P${Date.now()}`;
+      if (!payload.invoice_number) payload.invoice_number = invoiceNumber('INV');
+      if (!payload.variable_symbol) payload.variable_symbol = String(payload.payment_code || '').replace(/\D/g, '').slice(-10) || String(Date.now()).slice(-10);
+      payload.currency = payload.currency || 'EUR';
+    }
+    if (table === 'checkin_persons') {
+      const validation = await validateCheckinPerson(req, db, payload);
+      if (validation.mode === 'updateExistingBed') {
+        const { data, error } = await db
+          .from(table)
+          .update(stripTransientFields(table, { ...payload, updated_at: new Date().toISOString() }))
+          .eq('id', validation.existing.id)
+          .select('*')
+          .single();
+        if (error) throw error;
+        await writeAudit(req, table, 'deduplicate_update', data?.id, validation.existing, data);
+        return res.status(200).json({ success: true, data, deduplicated: true });
+      }
+    }
+    payload = stripTransientFields(table, payload);
+
+    let insertedRows, error;
+    if (table === 'payments') {
+      const directDb = adminSupabase || db;
+      if (req.propertyId && !payload.property_id) payload.property_id = req.propertyId;
+      const result = await directDb.from(table).insert(payload).select('*');
+      insertedRows = result.data;
+      error = result.error;
+    } else {
+      const result = await db.from(table).insert(payload).select('*');
+      insertedRows = result.data;
+      error = result.error;
+    }
+    if (error) throw error;
+    const data = Array.isArray(insertedRows) ? insertedRows[0] : insertedRows;
+    if (!data) throw new Error('Zaznam sa vytvoril bez navratovych dat. Skontroluj Supabase RLS/select policy pre tuto tabulku.');
+    await writeAudit(req, table, 'create', data?.id, null, data);
+    res.status(201).json({ success: true, data });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.put('/api/:table/:id', async (req, res) => {
+  if (!requireSupabase(req, res)) return;
+  const table = TABLES[req.params.table];
+  if (!table) return res.status(404).json({ success: false, error: 'Neznáma tabuľka' });
+  if (!canUseTable(req.role, table, 'write')) return res.status(403).json({ success: false, error: 'Na úpravu záznamu nemáš oprávnenie.' });
+  try {
+    const db = adminSupabase || req.supabase;
+    const { data: oldData } = await scopedQuery(req, table, db.from(table).select('*')).eq('id', req.params.id).maybeSingle();
+    let payload = withProperty(req, table, cleanPayload(table, { ...req.body, updated_at: new Date().toISOString() }));
+    if (table === 'bookings') {
+      Object.assign(payload, await calculateBookingPricing(db, payload));
+      if (cancelledStatus.has(payload.status)) {
+        payload.cancelled_at = payload.cancelled_at || new Date().toISOString();
+        payload.cancellation_fee = cancellationFee(payload);
+      }
+      const conflicts = await validateBookingBeds(req, db, payload, req.params.id);
+      if (conflicts) return res.status(409).json({ success: false, error: 'KONFLIKT DÁTUMOV: niektoré pridelené lôžko je v tomto termíne už rezervované.', conflicts });
+    }
+    if (table === 'checkin_persons') {
+      await validateCheckinPerson(req, db, payload, req.params.id);
+      payload = stripTransientFields(table, payload);
+    }
+    if (table === 'payments') {
+      payload = stripTransientFields(table, payload);
+
+      // Payments fix v3.23:
+      // Use a verified direct update. Do not return success unless DB row is really changed.
+      const directDb = adminSupabase || db;
+      if (req.propertyId && !payload.property_id) payload.property_id = req.propertyId;
+
+      const paidStatuses = new Set(['Zaplatené','paid','Đã thanh toán','Da thanh toan']);
+      const isPaidPayload = paidStatuses.has(payload.status);
+      if (isPaidPayload) {
+        payload.status = 'Zaplatené';
+        payload.paid_date = payload.paid_date || new Date().toISOString().slice(0, 10);
+        payload.paid_at = payload.paid_at || new Date().toISOString();
+      }
+
+      const updatePayload = {
+        ...payload,
+        updated_at: new Date().toISOString()
+      };
+
+      // First try stable id.
+      let updateResult = await directDb
+        .from(table)
+        .update(updatePayload)
+        .eq('id', req.params.id);
+
+      if (updateResult.error) throw updateResult.error;
+
+      // Verify by id.
+      let verify = await directDb
+        .from(table)
+        .select('*')
+        .eq('id', req.params.id)
+        .maybeSingle();
+
+      if (verify.error) throw verify.error;
+
+      let data = verify.data;
+
+      // If id is stale but payment_code exists, update and verify by payment_code.
+      if ((!data || (payload.status && data.status !== payload.status)) && payload.payment_code) {
+        updateResult = await directDb
+          .from(table)
+          .update(updatePayload)
+          .eq('payment_code', payload.payment_code);
+
+        if (updateResult.error) throw updateResult.error;
+
+        verify = await directDb
+          .from(table)
+          .select('*')
+          .eq('payment_code', payload.payment_code)
+          .maybeSingle();
+
+        if (verify.error) throw verify.error;
+        data = verify.data;
+      }
+
+      if (!data) {
+        throw new Error('Platbu sa nepodarilo nájsť po update. Skontroluj id/payment_code platby.');
+      }
+
+      if (payload.status && data.status !== payload.status) {
+        throw new Error(`Platba sa našla, ale status sa nezmenil. DB status=${data.status}, očakávané=${payload.status}. Skontroluj trigger alebo RLS na payments.`);
+      }
+
+      await writeAudit(req, table, 'update_verified', data.id || req.params.id, oldData, data);
+      return res.json({ success: true, data });
+    }
+    let { data: updatedRows, error } = await scopedQuery(req, table, db.from(table).update(payload).eq('id', req.params.id)).select('*');
+    if (error) throw error;
+    let data = Array.isArray(updatedRows) ? updatedRows[0] : updatedRows;
+
+    // Robust fallback for production: some Supabase RLS/select policies or property_id
+    // mismatches may allow the update but return no row. Do not break check-in flow.
+    // For operational tables we return a safe local object and write audit if possible.
+    if (!data && (table === 'bookings' || table === 'checkin_persons' || table === 'payments')) {
+      if (adminSupabase) {
+        const fallback = await adminSupabase
+          .from(table)
+          .update(payload)
+          .eq('id', req.params.id)
+          .select('*');
+        if (fallback.error) throw fallback.error;
+        data = Array.isArray(fallback.data) ? fallback.data[0] : fallback.data;
+      }
+      if (!data) {
+        data = { ...(oldData || {}), ...payload, id: req.params.id };
+        await writeAudit(req, table, 'update_fallback', req.params.id, oldData, data);
+        return res.json({ success: true, data, warning: 'Update nevratil data zo Supabase, použitý fallback.' });
+      }
+    }
+
+    if (!data) {
+      const fallbackData = oldData ? { ...oldData, ...payload, id: req.params.id } : null;
+      if (!fallbackData) throw new Error('Zaznam sa nepodarilo aktualizovat alebo vratit zo Supabase.');
+      await writeAudit(req, table, 'update', req.params.id, oldData, fallbackData);
+      return res.json({ success: true, data: fallbackData, warning: 'Update nevratil data zo Supabase.' });
+    }
+    await writeAudit(req, table, 'update', req.params.id, oldData, data);
+    res.json({ success: true, data });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.delete('/api/:table/:id', async (req, res) => {
+  if (!requireSupabase(req, res)) return;
+  const table = TABLES[req.params.table];
+  if (!table) return res.status(404).json({ success: false, error: 'Neznáma tabuľka' });
+  if (!canUseTable(req.role, table, 'delete')) return res.status(403).json({ success: false, error: 'Na vymazanie záznamu nemáš oprávnenie.' });
+  try {
+    const db = adminSupabase || req.supabase;
+    const { data: oldData } = await scopedQuery(req, table, db.from(table).select('*')).eq('id', req.params.id).maybeSingle();
+    const { error } = await scopedQuery(req, table, db.from(table).delete().eq('id', req.params.id));
+    if (error) throw error;
+    await writeAudit(req, table, 'delete', req.params.id, oldData, null);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.use((_req, res) => res.status(404).json({ success: false, error: 'Endpoint neexistuje' }));
+export default app;
