@@ -1,6 +1,6 @@
 {
-  "name": "stayhub-v3-6-5-vercel-config-fix",
-  "version": "3.6.5",
+  "name": "stayhub-v3-6-4-dashboard-data-binding-fix",
+  "version": "3.6.4",
   "private": true,
   "type": "module",
   "scripts": {
