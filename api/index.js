@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const app = express();
 app.use(cors({ origin: true, credentials: false }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '15mb' }));
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '';
@@ -12,6 +12,36 @@ const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_
 const authSupabase = supabaseUrl && anonKey ? createClient(supabaseUrl, anonKey) : null;
 const hasServiceRoleKey = Boolean(serviceRoleKey) && !serviceRoleKey.startsWith('sb_publishable_');
 const adminSupabase = supabaseUrl && hasServiceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
+
+const DOCUMENT_BUCKET = process.env.SUPABASE_DOCUMENTS_BUCKET || 'stayhub-documents';
+const DOCUMENT_FOLDERS = {
+  passport: 'passports',
+  pas: 'passports',
+  visa: 'visas',
+  víza: 'visas',
+  viza: 'visas',
+  pobyt: 'visas',
+  photo: 'photos',
+  fotka: 'photos',
+  fotografia: 'photos'
+};
+
+function safeFileName(name = 'document') {
+  const cleaned = String(name)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 90);
+  return cleaned || `document-${Date.now()}`;
+}
+
+function documentFolder(type = '', mime = '') {
+  const key = String(type || '').toLowerCase();
+  const mapped = Object.entries(DOCUMENT_FOLDERS).find(([needle]) => key.includes(needle));
+  if (mapped) return mapped[1];
+  if (String(mime || '').startsWith('image/')) return 'photos';
+  return 'documents';
+}
 
 const TABLES = {
   rooms: 'rooms',
@@ -325,7 +355,7 @@ function orderBy(table) {
   if (table === 'bookings') return ['check_in_date', false];
   if (table === 'payments') return ['payment_month', false];
   if (table === 'checkin_persons') return ['checkin_at', false];
-  if (table === 'documents') return ['expiry_date', true];
+  if (table === 'documents') return ['created_at', false];
   return ['created_at', false];
 }
 
@@ -381,7 +411,7 @@ function cleanPayload(table, payload) {
   const out = { ...payload };
   const nullableDates = ['due_date','paid_date','check_in_date','check_out_date','actual_check_in','actual_check_out','checkin_at','checkout_at','expected_checkout_date','date_of_birth','issue_date','expiry_date'];
   nullableDates.forEach(k => { if (out[k] === '') out[k] = null; });
-  ['company_id','booking_id','room_id','guest_id'].forEach(k => { if (out[k] === '') out[k] = null; });
+  ['company_id','booking_id','room_id','guest_id','person_id'].forEach(k => { if (out[k] === '') out[k] = null; });
   if (table === 'payments') {
     if (!out.payment_code) delete out.payment_code;
     if (out.amount === '') delete out.amount;
@@ -699,6 +729,39 @@ app.post('/api/admin/factory-reset', async (req, res) => {
     try { await db.from('rooms').update({ occupied_beds: 0, status: 'Voľná', updated_at: new Date().toISOString() }).eq('property_id', propertyId); } catch {}
     res.json({ success: true, data: { property_id: propertyId, reset: true } });
   } catch (err) { res.status(500).json({ success: false, error: err.message || 'Factory Reset zlyhal.' }); }
+});
+
+
+app.post('/api/documents/upload', async (req, res) => {
+  if (!requireSupabase(req, res)) return;
+  if (!canUseTable(req.role, 'documents', 'write')) return res.status(403).json({ success: false, error: 'Na nahratie dokumentu nemáš oprávnenie.' });
+  if (!adminSupabase) return res.status(500).json({ success: false, error: 'Chýba SUPABASE_SERVICE_ROLE_KEY pre bezpečný upload do Storage.' });
+  try {
+    const { filename, mime_type, base64, document_type, person_id, company_id } = req.body || {};
+    if (!base64) return res.status(400).json({ success: false, error: 'Chýba obsah súboru.' });
+    const rawBase64 = String(base64).includes(',') ? String(base64).split(',').pop() : String(base64);
+    const buffer = Buffer.from(rawBase64, 'base64');
+    if (!buffer.length) return res.status(400).json({ success: false, error: 'Súbor je prázdny.' });
+    if (buffer.length > 8 * 1024 * 1024) return res.status(413).json({ success: false, error: 'Súbor je príliš veľký. Maximum je 8 MB.' });
+
+    const folder = documentFolder(document_type, mime_type);
+    const owner = person_id ? `person-${person_id}` : company_id ? `company-${company_id}` : 'unassigned';
+    const path = `${req.propertyId || 'postova-3'}/${folder}/${owner}/${Date.now()}-${safeFileName(filename)}`;
+
+    const { error: uploadError } = await adminSupabase.storage
+      .from(DOCUMENT_BUCKET)
+      .upload(path, buffer, { contentType: mime_type || 'application/octet-stream', upsert: false });
+    if (uploadError) throw uploadError;
+
+    const { data: signed, error: signedError } = await adminSupabase.storage
+      .from(DOCUMENT_BUCKET)
+      .createSignedUrl(path, 60 * 60 * 24 * 7);
+    if (signedError) throw signedError;
+
+    res.json({ success: true, data: { bucket: DOCUMENT_BUCKET, storage_path: path, file_url: signed?.signedUrl || null, mime_type: mime_type || null, size_bytes: buffer.length } });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/:table', async (req, res) => {

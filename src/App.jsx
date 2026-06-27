@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { LANGUAGES, translateDom, t, pricingLabel } from './i18n.js';
-import AuroraCalendar from './aurora/AuroraCalendar.jsx';
+import AuroraCalendar from './modules/calendar/AuroraCalendar.jsx';
 import { parseBeds as engineParseBeds, overlapsDates as engineOverlapsDates, roomOccupancy, bookingHasNoActivePeopleAfterCheckout, activeReservationsForDay, COMPLETED_STATUSES, CANCELLED_STATUSES } from './core/reservationEngine.js';
 import { Menu, X, LogOut, Plus, Edit2, Trash2, Home, Calendar, CreditCard, Building2, Settings, UserCheck, DoorOpen, FileText, BarChart3, LayoutGrid, Download, Eye } from 'lucide-react';
 
@@ -673,7 +673,85 @@ function Documents({ documents = [], people = [], companies = [], onRefresh }) {
   return <div className="space-y-6"><Top title="📄 Dokumenty" action="Nový dokument" onAction={()=>{setEdit(null);setShow(true)}} onRefresh={onRefresh}/><div className="grid md:grid-cols-3 gap-4"><Card title="Dokumenty spolu" value={documents.length} color="border-blue-500"/><Card title="Expirácia do 30 dní" value={expiring.length} color="border-red-500"/><Card title="Osoby v evidencii" value={people.length} color="border-teal-500"/></div>{msg&&<Banner type={msg.startsWith('Chyba')?'error':undefined}>{msg}</Banner>}<Table heads={['Typ','Osoba/Firma','Číslo','Platnosť do','Súbor','Poznámka','Akcie']}>{documents.map(d=><tr key={d.id} className="border-t"><Td teal>{d.document_type}</Td><Td>{d.person_name || d.company_name || '—'}</Td><Td>{d.document_number || '—'}</Td><Td>{d.expiry_date || '—'}</Td><Td>{d.file_url ? <a className="text-teal-700 font-bold" href={d.file_url} target="_blank">Otvoriť</a> : '—'}</Td><Td>{d.note}</Td><Td><div className="flex gap-2"><Btn onClick={()=>{setEdit(d);setShow(true)}}><Edit2 size={16}/></Btn><Btn red onClick={()=>del(d)}><Trash2 size={16}/></Btn></div></Td></tr>)}</Table>{show&&<DocumentModal document={edit} people={people} companies={companies} onClose={()=>setShow(false)} onSave={save}/>}</div>;
 }
 
-function DocumentModal({ document, people, companies, onClose, onSave }) { const [f,setF]=useState({document_type:document?.document_type||'Pas',person_id:document?.person_id||'',person_name:document?.person_name||'',company_id:document?.company_id||'',company_name:document?.company_name||'',document_number:document?.document_number||'',issue_date:document?.issue_date||'',expiry_date:document?.expiry_date||'',file_url:document?.file_url||'',note:document?.note||''}); const sf=(k,v)=>setF(p=>({...p,[k]:v})); useEffect(()=>{ const person=people.find(p=>String(p.id)===String(f.person_id)); if(person) setF(p=>({...p,person_name:`${person.first_name||''} ${person.last_name||''}`.trim(),company_id:person.company_id||p.company_id,company_name:person.company_name||p.company_name})); },[f.person_id]); useEffect(()=>{ const c=companies.find(c=>String(c.id)===String(f.company_id)); if(c) sf('company_name', c.company_name); },[f.company_id]); return <Modal title={document?'Upraviť dokument':'Nový dokument'} onClose={onClose} onSave={()=>onSave(f)} wide><Grid><Select label="Typ dokumentu" value={f.document_type} onChange={v=>sf('document_type',v)} opts={['Pas','Občiansky preukaz','Pobytová karta','Pracovné povolenie','Zmluva o ubytovaní','GDPR súhlas','Iné'].map(x=>[x,x])}/><Select label="Osoba" value={f.person_id} onChange={v=>sf('person_id',v)} opts={[['','—'],...people.map(p=>[p.id,`${p.first_name||''} ${p.last_name||''} • ${bedLabel(p)}`])]}/><Select label="Firma" value={f.company_id} onChange={v=>sf('company_id',v)} opts={[['','—'],...companies.map(c=>[c.id,c.company_name])]}/><Field label="Číslo dokumentu" value={f.document_number} onChange={v=>sf('document_number',v)}/><Field label="Vydané" type="date" value={f.issue_date} onChange={v=>sf('issue_date',v)}/><Field label="Platné do" type="date" value={f.expiry_date} onChange={v=>sf('expiry_date',v)}/><Field label="URL súboru / scan" value={f.file_url} onChange={v=>sf('file_url',v)} placeholder="https://... alebo Supabase Storage URL"/></Grid><Text label="Poznámka" value={f.note} onChange={v=>sf('note',v)}/></Modal> }
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function DocumentModal({ document, people, companies, onClose, onSave }) {
+  const [f,setF]=useState({
+    document_type:document?.document_type||'Pas',
+    person_id:document?.person_id||'',person_name:document?.person_name||'',
+    company_id:document?.company_id||'',company_name:document?.company_name||'',
+    document_number:document?.document_number||'',issue_date:document?.issue_date||'',expiry_date:document?.expiry_date||'',
+    file_url:document?.file_url||'',storage_path:document?.storage_path||'',file_name:document?.file_name||'',mime_type:document?.mime_type||'',size_bytes:document?.size_bytes||'',
+    note:document?.note||''
+  });
+  const [uploading,setUploading]=useState(false);
+  const [uploadError,setUploadError]=useState('');
+  const sf=(k,v)=>setF(p=>({...p,[k]:v}));
+
+  useEffect(()=>{
+    const person=people.find(p=>String(p.id)===String(f.person_id));
+    if(person) setF(p=>({...p,person_name:`${person.first_name||''} ${person.last_name||''}`.trim(),company_id:person.company_id||p.company_id,company_name:person.company_name||p.company_name}));
+  },[f.person_id]);
+  useEffect(()=>{ const c=companies.find(c=>String(c.id)===String(f.company_id)); if(c) sf('company_name', c.company_name); },[f.company_id]);
+
+  async function uploadFile(file){
+    if(!file) return;
+    setUploadError('');
+    if(file.size > 8 * 1024 * 1024){ setUploadError('Súbor je príliš veľký. Maximum je 8 MB.'); return; }
+    setUploading(true);
+    try{
+      const base64 = await readFileAsBase64(file);
+      const uploaded = await api('/api/documents/upload', { method:'POST', body: JSON.stringify({ filename:file.name, mime_type:file.type, base64, document_type:f.document_type, person_id:f.person_id, company_id:f.company_id }) });
+      setF(p=>({...p, file_url:uploaded.file_url || p.file_url, storage_path:uploaded.storage_path || '', file_name:file.name, mime_type:file.type, size_bytes:file.size }));
+    }catch(e){ setUploadError(e.message || 'Upload zlyhal.'); }
+    finally{ setUploading(false); }
+  }
+
+  return <Modal title={document?'Upraviť dokument':'Nový dokument'} onClose={onClose} onSave={()=>onSave(f)} wide>
+    <Grid>
+      <Select label="Typ dokumentu" value={f.document_type} onChange={v=>sf('document_type',v)} opts={['Pas','Víza','Fotografia','Občiansky preukaz','Pobytová karta','Pracovné povolenie','Zmluva o ubytovaní','GDPR súhlas','Iné'].map(x=>[x,x])}/>
+      <Select label="Osoba" value={f.person_id} onChange={v=>sf('person_id',v)} opts={[["",'—'],...people.map(p=>[p.id,`${p.first_name||''} ${p.last_name||''} • ${bedLabel(p)}`])]}/>
+      <Select label="Firma" value={f.company_id} onChange={v=>sf('company_id',v)} opts={[["",'—'],...companies.map(c=>[c.id,c.company_name])]}/>
+      <Field label="Číslo dokumentu" value={f.document_number} onChange={v=>sf('document_number',v)}/>
+      <Field label="Vydané" type="date" value={f.issue_date} onChange={v=>sf('issue_date',v)}/>
+      <Field label="Platné do" type="date" value={f.expiry_date} onChange={v=>sf('expiry_date',v)}/>
+    </Grid>
+
+    <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <div className="text-sm font-black text-slate-700">Scan dokumentu</div>
+          <div className="text-sm text-slate-500">Nahrá sa do Supabase Storage: passports / visas / photos.</div>
+        </div>
+        <label className="btn-primary-soft cursor-pointer justify-center">
+          {uploading ? 'Nahrávam…' : 'Vybrať súbor / odfotiť mobilom'}
+          <input type="file" className="hidden" accept=".pdf,image/*" capture="environment" onChange={e=>uploadFile(e.target.files?.[0])}/>
+        </label>
+      </div>
+      {uploadError && <div className="mt-3 text-sm font-bold text-red-600">{uploadError}</div>}
+      {(f.file_name || f.storage_path || f.file_url) && <div className="mt-4 rounded-2xl bg-white border border-slate-200 p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div>
+          <div className="font-black text-slate-950">{f.file_name || 'Nahratý dokument'}</div>
+          <div className="text-xs text-slate-500 break-all">{f.storage_path || f.file_url}</div>
+        </div>
+        {f.file_url && <a className="btn-muted text-center" href={f.file_url} target="_blank">Náhľad</a>}
+      </div>}
+    </div>
+
+    <Grid>
+      <Field label="Storage path" value={f.storage_path} onChange={v=>sf('storage_path',v)} placeholder="postova-3/passports/person-id/file.pdf"/>
+      <Field label="URL súboru / signed URL" value={f.file_url} onChange={v=>sf('file_url',v)} placeholder="automaticky po uploade"/>
+    </Grid>
+    <Text label="Poznámka" value={f.note} onChange={v=>sf('note',v)}/>
+  </Modal>
+}
 
 function Reports({ rooms = [], bookings = [], payments = [], people = [], companies = [], documents = [] }) {
   const paidTotal = payments.filter(p=>['Zaplatené','paid'].includes(p.status)).reduce((s,p)=>s+Number(p.amount||0),0);

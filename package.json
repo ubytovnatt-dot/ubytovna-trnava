@@ -1,6 +1,6 @@
 {
-  "name": "stayhub-v4-unified-reservation-engine",
-  "version": "4.0.0",
+  "name": "stayhub-v4",
+  "version": "4.1.0",
   "private": true,
   "type": "module",
   "scripts": {
