@@ -325,7 +325,7 @@ function Sidebar({ open, active, setActive, onLogout, property, lang, role }) {
     ['checkout','Check-out',DoorOpen],
     ['payments','Platby',CreditCard],
     ['companies','Firmy',Building2],
-    ['documents','Dokumenty',FileText],
+    ['documents','AI OCR',FileText],
     ['reports','Reporty',BarChart3],
     ['settings','Nastavenia',Settings]
   ];
@@ -670,7 +670,12 @@ function Documents({ documents = [], people = [], companies = [], onRefresh }) {
   const expiring = documents.filter(d => d.expiry_date && d.expiry_date <= nextDays(30));
   async function save(f){try{await api(edit?`/api/documents/${edit.id}`:'/api/documents',{method:edit?'PUT':'POST',body:JSON.stringify(f)}); setShow(false); setEdit(null); setMsg('Dokument uložený.'); onRefresh();}catch(e){setMsg(`Chyba: ${e.message}`)}}
   async function del(d){ if(!confirm('Vymazať dokument?')) return; await api(`/api/documents/${d.id}`,{method:'DELETE'}); onRefresh(); }
-  return <div className="space-y-6"><Top title="📄 Dokumenty" action="Nový dokument" onAction={()=>{setEdit(null);setShow(true)}} onRefresh={onRefresh}/><div className="grid md:grid-cols-3 gap-4"><Card title="Dokumenty spolu" value={documents.length} color="border-blue-500"/><Card title="Expirácia do 30 dní" value={expiring.length} color="border-red-500"/><Card title="Osoby v evidencii" value={people.length} color="border-teal-500"/></div>{msg&&<Banner type={msg.startsWith('Chyba')?'error':undefined}>{msg}</Banner>}<Table heads={['Typ','Osoba/Firma','Číslo','Platnosť do','Súbor','Poznámka','Akcie']}>{documents.map(d=><tr key={d.id} className="border-t"><Td teal>{d.document_type}</Td><Td>{d.person_name || d.company_name || '—'}</Td><Td>{d.document_number || '—'}</Td><Td>{d.expiry_date || '—'}</Td><Td>{d.file_url ? <a className="text-teal-700 font-bold" href={d.file_url} target="_blank">Otvoriť</a> : '—'}</Td><Td>{d.note}</Td><Td><div className="flex gap-2"><Btn onClick={()=>{setEdit(d);setShow(true)}}><Edit2 size={16}/></Btn><Btn red onClick={()=>del(d)}><Trash2 size={16}/></Btn></div></Td></tr>)}</Table>{show&&<DocumentModal document={edit} people={people} companies={companies} onClose={()=>setShow(false)} onSave={save}/>}</div>;
+  return <div className="space-y-6"><Top title="🤖 AI OCR" action="Nový scan" onAction={()=>{setEdit(null);setShow(true)}} onRefresh={onRefresh}/>
+    <div className="rounded-3xl border border-teal-100 bg-gradient-to-br from-teal-50 to-white p-5">
+      <div className="text-lg font-black text-slate-950">Jednoduchý modul: nahráš pas/víza/fotku a AI vyplní údaje.</div>
+      <div className="text-sm text-slate-600 mt-1">Bez zložitého Document Center. Súbor sa uloží do Supabase Storage a OCR predvyplní číslo dokladu, meno, dátum platnosti a poznámku.</div>
+    </div>
+    <div className="grid md:grid-cols-3 gap-4"><Card title="Scany spolu" value={documents.length} color="border-blue-500"/><Card title="Expirácia do 30 dní" value={expiring.length} color="border-red-500"/><Card title="Osoby v evidencii" value={people.length} color="border-teal-500"/></div>{msg&&<Banner type={msg.startsWith('Chyba')?'error':undefined}>{msg}</Banner>}<Table heads={['Typ','Osoba/Firma','Číslo','Platnosť do','Súbor','OCR poznámka','Akcie']}>{documents.map(d=><tr key={d.id} className="border-t"><Td teal>{d.document_type}</Td><Td>{d.person_name || d.company_name || '—'}</Td><Td>{d.document_number || '—'}</Td><Td>{d.expiry_date || '—'}</Td><Td>{d.file_url ? <a className="text-teal-700 font-bold" href={d.file_url} target="_blank">Otvoriť</a> : '—'}</Td><Td>{d.note}</Td><Td><div className="flex gap-2"><Btn onClick={()=>{setEdit(d);setShow(true)}}><Edit2 size={16}/></Btn><Btn red onClick={()=>del(d)}><Trash2 size={16}/></Btn></div></Td></tr>)}</Table>{show&&<DocumentModal document={edit} people={people} companies={companies} onClose={()=>setShow(false)} onSave={save}/>}</div>;
 }
 
 function readFileAsBase64(file) {
@@ -692,6 +697,8 @@ function DocumentModal({ document, people, companies, onClose, onSave }) {
     note:document?.note||''
   });
   const [uploading,setUploading]=useState(false);
+  const [ocrLoading,setOcrLoading]=useState(false);
+  const [ocrBase64,setOcrBase64]=useState('');
   const [uploadError,setUploadError]=useState('');
   const sf=(k,v)=>setF(p=>({...p,[k]:v}));
 
@@ -708,13 +715,33 @@ function DocumentModal({ document, people, companies, onClose, onSave }) {
     setUploading(true);
     try{
       const base64 = await readFileAsBase64(file);
+      setOcrBase64(base64);
       const uploaded = await api('/api/documents/upload', { method:'POST', body: JSON.stringify({ filename:file.name, mime_type:file.type, base64, document_type:f.document_type, person_id:f.person_id, company_id:f.company_id }) });
       setF(p=>({...p, file_url:uploaded.file_url || p.file_url, storage_path:uploaded.storage_path || '', file_name:file.name, mime_type:file.type, size_bytes:file.size }));
     }catch(e){ setUploadError(e.message || 'Upload zlyhal.'); }
     finally{ setUploading(false); }
   }
 
-  return <Modal title={document?'Upraviť dokument':'Nový dokument'} onClose={onClose} onSave={()=>onSave(f)} wide>
+
+  async function runOcr(){
+    if(!ocrBase64 && !f.file_url){ setUploadError('Najprv nahraj alebo odfoť dokument.'); return; }
+    setUploadError('');
+    setOcrLoading(true);
+    try{
+      const result = await api('/api/documents/ocr', { method:'POST', body: JSON.stringify({ base64: ocrBase64, file_url:f.file_url, mime_type:f.mime_type, document_type:f.document_type }) });
+      setF(p=>({
+        ...p,
+        document_number: result.document_number || p.document_number,
+        expiry_date: result.expiry_date || p.expiry_date,
+        issue_date: result.issue_date || p.issue_date,
+        person_name: result.full_name || p.person_name,
+        note: [p.note, result.summary ? `OCR: ${result.summary}` : 'OCR spracované'].filter(Boolean).join('\n')
+      }));
+    }catch(e){ setUploadError(e.message || 'OCR zlyhalo.'); }
+    finally{ setOcrLoading(false); }
+  }
+
+  return <Modal title={document?'Upraviť AI OCR záznam':'Nový AI OCR scan'} onClose={onClose} onSave={()=>onSave(f)} wide>
     <Grid>
       <Select label="Typ dokumentu" value={f.document_type} onChange={v=>sf('document_type',v)} opts={['Pas','Víza','Fotografia','Občiansky preukaz','Pobytová karta','Pracovné povolenie','Zmluva o ubytovaní','GDPR súhlas','Iné'].map(x=>[x,x])}/>
       <Select label="Osoba" value={f.person_id} onChange={v=>sf('person_id',v)} opts={[["",'—'],...people.map(p=>[p.id,`${p.first_name||''} ${p.last_name||''} • ${bedLabel(p)}`])]}/>
@@ -727,8 +754,8 @@ function DocumentModal({ document, people, companies, onClose, onSave }) {
     <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <div className="text-sm font-black text-slate-700">Scan dokumentu</div>
-          <div className="text-sm text-slate-500">Nahrá sa do Supabase Storage: passports / visas / photos.</div>
+          <div className="text-sm font-black text-slate-700">AI OCR scan</div>
+          <div className="text-sm text-slate-500">Nahraj pas, víza alebo fotku. Potom klikni na AI OCR a systém predvyplní údaje.</div>
         </div>
         <label className="btn-primary-soft cursor-pointer justify-center">
           {uploading ? 'Nahrávam…' : 'Vybrať súbor / odfotiť mobilom'}
@@ -741,15 +768,11 @@ function DocumentModal({ document, people, companies, onClose, onSave }) {
           <div className="font-black text-slate-950">{f.file_name || 'Nahratý dokument'}</div>
           <div className="text-xs text-slate-500 break-all">{f.storage_path || f.file_url}</div>
         </div>
-        {f.file_url && <a className="btn-muted text-center" href={f.file_url} target="_blank">Náhľad</a>}
+        <div className="flex gap-2">{f.file_url && <a className="btn-muted text-center" href={f.file_url} target="_blank">Náhľad</a>}<button type="button" className="btn-primary-soft" onClick={runOcr} disabled={ocrLoading}>{ocrLoading ? 'AI číta…' : 'AI OCR'}</button></div>
       </div>}
     </div>
 
-    <Grid>
-      <Field label="Storage path" value={f.storage_path} onChange={v=>sf('storage_path',v)} placeholder="postova-3/passports/person-id/file.pdf"/>
-      <Field label="URL súboru / signed URL" value={f.file_url} onChange={v=>sf('file_url',v)} placeholder="automaticky po uploade"/>
-    </Grid>
-    <Text label="Poznámka" value={f.note} onChange={v=>sf('note',v)}/>
+    <Text label="OCR poznámka" value={f.note} onChange={v=>sf('note',v)}/>
   </Modal>
 }
 

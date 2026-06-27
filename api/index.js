@@ -13,17 +13,24 @@ const authSupabase = supabaseUrl && anonKey ? createClient(supabaseUrl, anonKey)
 const hasServiceRoleKey = Boolean(serviceRoleKey) && !serviceRoleKey.startsWith('sb_publishable_');
 const adminSupabase = supabaseUrl && hasServiceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
 
-const DOCUMENT_BUCKET = process.env.SUPABASE_DOCUMENTS_BUCKET || 'stayhub-documents';
+const DOCUMENT_BUCKET = process.env.SUPABASE_DOCUMENTS_BUCKET || 'stayhub-private';
 const DOCUMENT_FOLDERS = {
-  passport: 'passports',
-  pas: 'passports',
-  visa: 'visas',
-  víza: 'visas',
-  viza: 'visas',
-  pobyt: 'visas',
+  passport: 'passport',
+  pas: 'passport',
+  visa: 'visa',
+  víza: 'visa',
+  viza: 'visa',
+  pobyt: 'visa',
   photo: 'photos',
   fotka: 'photos',
-  fotografia: 'photos'
+  fotografia: 'photos',
+  contract: 'contract',
+  zmluva: 'contract',
+  insurance: 'insurance',
+  poistenie: 'insurance',
+  work: 'work_permit',
+  pracovne: 'work_permit',
+  pracovné: 'work_permit'
 };
 
 function safeFileName(name = 'document') {
@@ -35,12 +42,85 @@ function safeFileName(name = 'document') {
   return cleaned || `document-${Date.now()}`;
 }
 
+function slugPart(value = '', fallback = 'unassigned') {
+  const cleaned = String(value || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return cleaned || fallback;
+}
+
 function documentFolder(type = '', mime = '') {
   const key = String(type || '').toLowerCase();
   const mapped = Object.entries(DOCUMENT_FOLDERS).find(([needle]) => key.includes(needle));
   if (mapped) return mapped[1];
   if (String(mime || '').startsWith('image/')) return 'photos';
-  return 'documents';
+  return 'other';
+}
+
+function buildDocumentStoragePath({ propertyId, company_id, person_id, document_type, filename, mime_type }) {
+  const property = slugPart(propertyId || 'postova-3', 'postova-3');
+  const company = company_id ? `company-${slugPart(company_id)}` : 'company-unassigned';
+  const person = person_id ? `person-${slugPart(person_id)}` : 'person-unassigned';
+  const folder = documentFolder(document_type, mime_type);
+  const uniqueName = `${Date.now()}-${safeFileName(filename)}`;
+  return `${property}/${company}/${person}/${folder}/${uniqueName}`;
+}
+
+function normalizeOcrDate(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  const iso = raw.match(/(20\d{2}|19\d{2})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2,'0')}-${iso[3].padStart(2,'0')}`;
+  const eur = raw.match(/(\d{1,2})[-\/.](\d{1,2})[-\/.](20\d{2}|19\d{2})/);
+  if (eur) return `${eur[3]}-${eur[2].padStart(2,'0')}-${eur[1].padStart(2,'0')}`;
+  return null;
+}
+
+function fallbackOcrFromText(text = '') {
+  const t = String(text || '');
+  const passport = t.match(/(?:passport|pas|cestovny|cestovn\w*|document|doklad)[^A-Z0-9]{0,12}([A-Z0-9]{6,12})/i) || t.match(/\b([A-Z]{1,3}\d{6,9})\b/);
+  const expiry = t.match(/(?:expiry|expires|valid until|platn\w* do|expiration)[^0-9]{0,20}([0-9]{1,2}[.\/-][0-9]{1,2}[.\/-][12][0-9]{3}|[12][0-9]{3}[.\/-][0-9]{1,2}[.\/-][0-9]{1,2})/i);
+  return {
+    document_number: passport?.[1] || '',
+    expiry_date: normalizeOcrDate(expiry?.[1]),
+    issue_date: null,
+    full_name: '',
+    nationality: '',
+    summary: passport?.[1] ? 'Rozpoznané základné údaje zo scanu.' : 'OCR demo: údaje neboli spoľahlivo rozpoznané.'
+  };
+}
+
+async function openAiOcr({ base64, file_url, mime_type, document_type }) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  const imageUrl = base64 || file_url;
+  if (!imageUrl || String(mime_type || '').includes('pdf')) return null;
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: process.env.OPENAI_OCR_MODEL || 'gpt-4.1-mini',
+      input: [{ role: 'user', content: [
+        { type: 'input_text', text: `Extract OCR data from this ${document_type || 'document'}. Return ONLY JSON with keys: document_number, issue_date, expiry_date, full_name, nationality, summary. Dates must be YYYY-MM-DD or null.` },
+        { type: 'input_image', image_url: imageUrl }
+      ] }],
+      text: { format: { type: 'json_object' } }
+    })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error?.message || 'OpenAI OCR zlyhalo.');
+  const text = data.output_text || data.output?.flatMap(o=>o.content||[]).map(c=>c.text).filter(Boolean).join('') || '{}';
+  const parsed = JSON.parse(text);
+  return {
+    document_number: parsed.document_number || '',
+    issue_date: normalizeOcrDate(parsed.issue_date),
+    expiry_date: normalizeOcrDate(parsed.expiry_date),
+    full_name: parsed.full_name || '',
+    nationality: parsed.nationality || '',
+    summary: parsed.summary || 'AI OCR spracované.'
+  };
 }
 
 const TABLES = {
@@ -412,6 +492,10 @@ function cleanPayload(table, payload) {
   const nullableDates = ['due_date','paid_date','check_in_date','check_out_date','actual_check_in','actual_check_out','checkin_at','checkout_at','expected_checkout_date','date_of_birth','issue_date','expiry_date'];
   nullableDates.forEach(k => { if (out[k] === '') out[k] = null; });
   ['company_id','booking_id','room_id','guest_id','person_id'].forEach(k => { if (out[k] === '') out[k] = null; });
+  if (table === 'documents') {
+    delete out._ocr_base64;
+    delete out.ocr_result;
+  }
   if (table === 'payments') {
     if (!out.payment_code) delete out.payment_code;
     if (out.amount === '') delete out.amount;
@@ -472,6 +556,10 @@ function stripTransientFields(table, payload) {
     delete out.requested_beds;
     delete out.beds_count;
     delete out.reserved_beds;
+  }
+  if (table === 'documents') {
+    delete out._ocr_base64;
+    delete out.ocr_result;
   }
   if (table === 'payments') {
     // Payment form uses reservation-derived display fields. Keep only columns that exist in payments.
@@ -732,6 +820,20 @@ app.post('/api/admin/factory-reset', async (req, res) => {
 });
 
 
+
+app.post('/api/documents/ocr', async (req, res) => {
+  if (!requireSupabase(req, res)) return;
+  if (!canUseTable(req.role, 'documents', 'write')) return res.status(403).json({ success: false, error: 'Na AI OCR nemáš oprávnenie.' });
+  try {
+    const { base64, file_url, mime_type, document_type, raw_text } = req.body || {};
+    const ai = await openAiOcr({ base64, file_url, mime_type, document_type });
+    const result = ai || fallbackOcrFromText(raw_text || '');
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'AI OCR zlyhalo.' });
+  }
+});
+
 app.post('/api/documents/upload', async (req, res) => {
   if (!requireSupabase(req, res)) return;
   if (!canUseTable(req.role, 'documents', 'write')) return res.status(403).json({ success: false, error: 'Na nahratie dokumentu nemáš oprávnenie.' });
@@ -744,9 +846,14 @@ app.post('/api/documents/upload', async (req, res) => {
     if (!buffer.length) return res.status(400).json({ success: false, error: 'Súbor je prázdny.' });
     if (buffer.length > 8 * 1024 * 1024) return res.status(413).json({ success: false, error: 'Súbor je príliš veľký. Maximum je 8 MB.' });
 
-    const folder = documentFolder(document_type, mime_type);
-    const owner = person_id ? `person-${person_id}` : company_id ? `company-${company_id}` : 'unassigned';
-    const path = `${req.propertyId || 'postova-3'}/${folder}/${owner}/${Date.now()}-${safeFileName(filename)}`;
+    const path = buildDocumentStoragePath({
+      propertyId: req.propertyId,
+      company_id,
+      person_id,
+      document_type,
+      filename,
+      mime_type
+    });
 
     const { error: uploadError } = await adminSupabase.storage
       .from(DOCUMENT_BUCKET)
@@ -929,7 +1036,11 @@ app.post('/api/:table', async (req, res) => {
       const conflicts = await validateBookingBeds(req, db, payload);
       if (conflicts) return res.status(409).json({ success: false, error: 'KONFLIKT DÁTUMOV: niektoré pridelené lôžko je v tomto termíne už rezervované.', conflicts });
     }
-    if (table === 'payments') {
+    if (table === 'documents') {
+    delete out._ocr_base64;
+    delete out.ocr_result;
+  }
+  if (table === 'payments') {
       if (!payload.payment_code) payload.payment_code = `P${Date.now()}`;
       if (!payload.invoice_number) payload.invoice_number = invoiceNumber('INV');
       if (!payload.variable_symbol) payload.variable_symbol = String(payload.payment_code || '').replace(/\D/g, '').slice(-10) || String(Date.now()).slice(-10);
@@ -952,7 +1063,11 @@ app.post('/api/:table', async (req, res) => {
     payload = stripTransientFields(table, payload);
 
     let insertedRows, error;
-    if (table === 'payments') {
+    if (table === 'documents') {
+    delete out._ocr_base64;
+    delete out.ocr_result;
+  }
+  if (table === 'payments') {
       const directDb = adminSupabase || db;
       if (req.propertyId && !payload.property_id) payload.property_id = req.propertyId;
       const result = await directDb.from(table).insert(payload).select('*');
@@ -993,7 +1108,11 @@ app.put('/api/:table/:id', async (req, res) => {
       await validateCheckinPerson(req, db, payload, req.params.id);
       payload = stripTransientFields(table, payload);
     }
-    if (table === 'payments') {
+    if (table === 'documents') {
+    delete out._ocr_base64;
+    delete out.ocr_result;
+  }
+  if (table === 'payments') {
       payload = stripTransientFields(table, payload);
 
       // Payments fix v3.23:

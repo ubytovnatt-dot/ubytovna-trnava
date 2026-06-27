@@ -50,3 +50,35 @@ supabase/migrations/20260627_stayhub_v4_1_documents_storage.sql
 ```
 
 Required environment variables are listed in `.env.example`.
+
+
+## StayHub v4.2 Document Center
+
+Document Center používa jeden private bucket `stayhub-private`. Priečinky sa nevytvárajú ručne v Supabase UI. Backend ich vytvorí automaticky pri uploade podľa štruktúry:
+
+```text
+stayhub-private/
+  postova-3/
+    company-{company_id}/
+      person-{person_id}/
+        passport/
+        visa/
+        photos/
+        contract/
+        insurance/
+        work_permit/
+        other/
+```
+
+Pred deployom spusti migráciu:
+
+```text
+supabase/migrations/20260627_stayhub_v4_2_document_center_private_bucket.sql
+```
+
+Vo Verceli nastav:
+
+```env
+SUPABASE_DOCUMENTS_BUCKET=stayhub-private
+SUPABASE_SERVICE_ROLE_KEY=...
+```
