@@ -246,7 +246,14 @@ export default function UbytovnaApp() {
       const [r, b, p, c, pe, d, s] = await Promise.all([
         api('/api/rooms'), api('/api/bookings'), api('/api/payments'), api('/api/companies'), api('/api/checkin-persons'), api('/api/documents').catch(() => []), api('/api/stats')
       ]);
-      setRooms(r || []); setBookings(b || []); setPayments(p || []); setCompanies(c || []); setPeople(pe || []); setDocuments(d || []); setStats(s || {});
+      const arr = (value) => Array.isArray(value) ? value : [];
+      setRooms(arr(r));
+      setBookings(arr(b));
+      setPayments(arr(p));
+      setCompanies(arr(c));
+      setPeople(arr(pe));
+      setDocuments(arr(d));
+      setStats(s && !Array.isArray(s) ? s : {});
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
