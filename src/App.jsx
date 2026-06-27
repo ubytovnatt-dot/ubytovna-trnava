@@ -22,7 +22,7 @@ const USER_ROLES = {
   admin: {
     label: 'Admin',
     description: 'Plný prístup ku všetkým modulom, nastaveniam, mazaniu a reportom.',
-    tabs: ['dashboard','rooms','bookings','calendar','checkin','checkout','payments','companies','documents','reports','settings'],
+    tabs: ['dashboard','bookings','checkin','settings'],
     canCreate: true,
     canEdit: true,
     canDelete: true,
@@ -35,7 +35,7 @@ const USER_ROLES = {
   manager: {
     label: 'Správca',
     description: 'Prevádzkový manažér: rezervácie, firmy, platby, check-in/out a reporty bez systémových nastavení.',
-    tabs: ['dashboard','rooms','bookings','calendar','checkin','checkout','payments','companies','documents','reports'],
+    tabs: ['dashboard','bookings','checkin','settings'],
     canCreate: true,
     canEdit: true,
     canDelete: false,
@@ -48,7 +48,7 @@ const USER_ROLES = {
   reception: {
     label: 'Recepcia',
     description: 'Denná prevádzka: rezervácie, check-in, check-out a základné platby bez mazania.',
-    tabs: ['dashboard','rooms','bookings','calendar','checkin','checkout','payments'],
+    tabs: ['dashboard','bookings','checkin','settings'],
     canCreate: true,
     canEdit: true,
     canDelete: false,
@@ -61,7 +61,7 @@ const USER_ROLES = {
   accounting: {
     label: 'Účtovník',
     description: 'Prístup k platbám, reportom a základnému prehľadu bez prevádzkových zásahov.',
-    tabs: ['dashboard','payments','reports'],
+    tabs: ['dashboard','bookings','settings'],
     canCreate: true,
     canEdit: true,
     canDelete: false,
@@ -74,7 +74,7 @@ const USER_ROLES = {
   housekeeping: {
     label: 'Housekeeping',
     description: 'Kontrola izieb a stavov ubytovania bez rezervácií, platieb a nastavení.',
-    tabs: ['dashboard','rooms','checkout'],
+    tabs: ['dashboard','checkin','settings'],
     canCreate: false,
     canEdit: true,
     canDelete: false,
@@ -87,7 +87,7 @@ const USER_ROLES = {
   viewer: {
     label: 'Viewer',
     description: 'Iba čítanie dashboardu, izieb, kalendára a rezervácií.',
-    tabs: ['dashboard','rooms','bookings','calendar'],
+    tabs: ['dashboard','bookings','settings'],
     canCreate: false,
     canEdit: false,
     canDelete: false,
@@ -261,7 +261,7 @@ export default function UbytovnaApp() {
   useEffect(() => { if (logged && !canAccessTab(currentRole, activeTab)) setActiveTab(roleInfo.tabs[0] || 'dashboard'); }, [logged, currentRole, activeTab]);
   if (authLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white font-black">Načítavam StayHub...</div>;
   if (!logged) return <LoginScreen onLogin={loginWithPassword} setupReady={Boolean(supabaseAuth)} />;
-  return <div className="app-shell flex h-screen bg-slate-50 text-slate-900"><Sidebar open={sidebarOpen} active={activeTab} setActive={(tab)=>{ if (!canAccessTab(currentRole, tab)) return; setActiveTab(tab); if (typeof window !== 'undefined' && window.innerWidth < 1024) setSidebarOpen(false);}} onLogout={logout} property={selectedProperty} lang={lang} role={currentRole} /><button aria-label="Zatvoriť menu" className={`mobile-menu-overlay ${sidebarOpen ? 'is-open' : ''}`} onClick={() => setSidebarOpen(false)} /><div className="flex-1 overflow-auto page-scroll"><Header open={sidebarOpen} setOpen={setSidebarOpen} lang={lang} setLang={changeLang} properties={DEFAULT_PROPERTIES} propertyId={selectedPropertyId} setPropertyId={(id)=>{setSelectedPropertyId(id);localStorage.setItem('stayhub_property', id);}} role={currentRole} user={currentUser} />{error && <Banner type="error">Chyba: {error}</Banner>}{loading && <Banner>⏳ Načítavam dáta...</Banner>}<main className="p-5 md:p-8 max-w-[1800px] mx-auto">
+  return <div className="app-shell stayhub-v5 flex h-screen bg-slate-50 text-slate-900"><Sidebar open={sidebarOpen} active={activeTab} setActive={(tab)=>{ if (!canAccessTab(currentRole, tab)) return; setActiveTab(tab); if (typeof window !== 'undefined' && window.innerWidth < 1024) setSidebarOpen(false);}} onLogout={logout} property={selectedProperty} lang={lang} role={currentRole} /><button aria-label="Zatvoriť menu" className={`mobile-menu-overlay ${sidebarOpen ? 'is-open' : ''}`} onClick={() => setSidebarOpen(false)} /><div className="flex-1 overflow-auto page-scroll"><Header open={sidebarOpen} setOpen={setSidebarOpen} lang={lang} setLang={changeLang} properties={DEFAULT_PROPERTIES} propertyId={selectedPropertyId} setPropertyId={(id)=>{setSelectedPropertyId(id);localStorage.setItem('stayhub_property', id);}} role={currentRole} user={currentUser} />{error && <Banner type="error">Chyba: {error}</Banner>}{loading && <Banner>⏳ Načítavam dáta...</Banner>}<main className="v5-main p-5 md:p-8 max-w-[1480px] mx-auto">
     {activeTab === 'dashboard' && <Dashboard stats={stats} bookings={bookings} payments={payments} people={people} rooms={rooms} lang={lang} />}
     {activeTab === 'rooms' && <Rooms rooms={rooms} bookings={bookings} people={people} onRefresh={fetchData} role={currentRole} />}
     {activeTab === 'bookings' && <Bookings bookings={bookings} rooms={rooms} companies={companies} onRefresh={fetchData} role={currentRole} />}
@@ -317,22 +317,15 @@ function LoginScreen({ onLogin, setupReady }) {
 
 function Sidebar({ open, active, setActive, onLogout, property, lang, role }) {
   const allItems=[
-    ['dashboard','Dashboard',Home],
-    ['rooms','Izby',Home],
+    ['dashboard','Dnes',Home],
     ['bookings','Rezervácie',Calendar],
-    ['calendar','Kalendár',LayoutGrid],
-    ['checkin','Check-in',UserCheck],
-    ['checkout','Check-out',DoorOpen],
-    ['payments','Platby',CreditCard],
-    ['companies','Firmy',Building2],
-    ['documents','AI OCR',FileText],
-    ['reports','Reporty',BarChart3],
+    ['checkin','Check-in / Check-out',DoorOpen],
     ['settings','Nastavenia',Settings]
   ];
   const items=allItems.filter(([id])=>canAccessTab(role,id));
   const roleLabel = getRole(role).label;
 
-  return <aside className={`${open?'w-72':'w-20'} stayhub-sidebar text-white transition-all flex flex-col shadow-2xl`}>
+  return <aside className={`${open?'w-72':'w-20'} stayhub-sidebar v5-sidebar text-white transition-all flex flex-col shadow-2xl`}>
     <div className="sidebar-head">
       <div className="flex items-center gap-3">
         <BrandMark compact />
@@ -376,8 +369,9 @@ function Sidebar({ open, active, setActive, onLogout, property, lang, role }) {
 }
 
 function Header({ open, setOpen, lang, setLang, properties, propertyId, setPropertyId, role, user }) {
-  return <header className="bg-white/90 backdrop-blur border-b border-slate-200 sticky top-0 z-10"><div className="flex justify-between items-center px-5 md:px-8 py-4">
-    <button onClick={()=>setOpen(!open)} className="icon-btn">{open?<X/>:<Menu/>}</button>
+  return <header className="v5-header bg-white/80 backdrop-blur border-b border-slate-200 sticky top-0 z-10"><div className="flex justify-between items-center px-5 md:px-8 py-4 gap-4">
+    <button onClick={()=>setOpen(!open)} className="icon-btn v5-menu-toggle">{open?<X/>:<Menu/>}</button>
+    <div className="hidden lg:flex flex-1 max-w-xl items-center rounded-2xl bg-slate-100 border border-slate-200 px-4 py-3 text-sm text-slate-500">Hľadať hosťa, firmu, izbu alebo rezerváciu…</div>
     <div className="flex items-center gap-3 flex-wrap justify-end">
       <label className="hidden sm:flex items-center gap-2 text-sm font-bold text-slate-600"><span>{t('Objekt', lang)}</span><select value={propertyId} onChange={(e)=>setPropertyId(e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2 bg-white text-slate-800 font-semibold">{properties.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       <LanguageSwitcher lang={lang} setLang={setLang} />
@@ -434,7 +428,7 @@ function Dashboard({ stats, bookings, payments, people, rooms, lang='sk' }) {
     .filter(p => ['Zaplatené','paid','Đã thanh toán','Da thanh toan'].includes(p.status))
     .reduce((s,p)=>s+Number(p.amount||0),0);
 
-  return <div className="space-y-6"><h1 className="text-3xl font-bold">📊 {t('Dashboard v3', lang)}</h1>
+  return <div className="space-y-6"><div className="v5-today-hero"><div><p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">StayHub v5</p><h1 className="text-4xl md:text-5xl font-black tracking-tight text-slate-950">Dnes</h1><p className="mt-2 text-slate-500 font-semibold">Rýchly prehľad pre recepciu a denný workflow.</p></div><div className="v5-date-pill">{new Date().toLocaleDateString('sk-SK', { weekday:'long', day:'2-digit', month:'long' })}</div></div>
     <div className="grid md:grid-cols-4 gap-4">
       <Card title={t('Obsadenosť', lang)} value={`${used}/${cap} (${rate}%)`} color="border-teal-500"/>
       <Card title={t('Voľné lôžka', lang)} value={free} color="border-green-500"/>

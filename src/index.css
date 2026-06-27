@@ -1090,3 +1090,140 @@ body {
 
 /* StayHub v4.3 – Simple Calendar */
 .simple-cal-shell{display:flex;flex-direction:column;gap:18px;padding:18px}.simple-cal-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.simple-cal-header h1{font-size:32px;line-height:1.1;margin:0 0 8px;color:#0f172a}.simple-cal-header p{margin:0;color:#64748b;font-weight:600}.simple-cal-actions,.simple-cal-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.simple-cal-actions button,.simple-cal-toolbar button{border:1px solid #e2e8f0;background:#fff;color:#0f172a;border-radius:14px;padding:10px 13px;font-weight:800;display:inline-flex;gap:7px;align-items:center;box-shadow:0 8px 20px rgba(15,23,42,.06);cursor:pointer}.simple-cal-actions button.is-active{background:#111827;color:#fff;border-color:#111827}.simple-cal-toolbar{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:12px;box-shadow:0 12px 30px rgba(15,23,42,.06)}.simple-cal-toolbar strong{min-width:160px;text-align:center;text-transform:capitalize}.simple-cal-toolbar input{border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;font-weight:800}.simple-cal-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.simple-cal-metric{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:16px;box-shadow:0 12px 30px rgba(15,23,42,.05)}.simple-cal-metric small{display:block;color:#64748b;font-weight:800}.simple-cal-metric b{display:block;font-size:28px;color:#0f172a;margin-top:6px}.simple-cal-metric span{color:#94a3b8;font-weight:700}.simple-cal-card{background:#fff;border:1px solid #e2e8f0;border-radius:22px;padding:18px;box-shadow:0 14px 35px rgba(15,23,42,.07);overflow:auto}.simple-cal-card-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}.simple-cal-card-head h3{font-size:22px;margin:0;color:#0f172a}.simple-cal-card-head span{font-weight:800;color:#64748b}.simple-cal-room-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.simple-cal-room-row{display:flex;justify-content:space-between;gap:12px;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:14px}.simple-cal-room-row b{display:block;color:#0f172a}.simple-cal-room-row small{display:block;color:#64748b;font-weight:700;margin-top:3px}.simple-cal-room-row span,.simple-cal-week-cell{border-radius:13px;padding:8px 10px;font-weight:900}.simple-cal-free{background:#dcfce7!important;color:#166534!important;border-color:#86efac!important}.simple-cal-partial{background:#fef3c7!important;color:#92400e!important;border-color:#fcd34d!important}.simple-cal-full{background:#fee2e2!important;color:#991b1b!important;border-color:#fca5a5!important}.simple-cal-conflict{background:#7f1d1d!important;color:#fff!important;border-color:#7f1d1d!important}.simple-cal-week-grid{display:grid;gap:8px;min-width:760px}.simple-cal-week-head{border:0;background:#f1f5f9;border-radius:12px;padding:11px;color:#475569;font-weight:900;text-align:center}.simple-cal-week-room{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:14px;font-weight:900;color:#0f172a}.simple-cal-week-cell{border:1px solid #e2e8f0;min-height:58px;display:flex;flex-direction:column;justify-content:center;align-items:center;cursor:pointer}.simple-cal-week-cell small{font-size:12px;margin-top:3px}.simple-cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:8px}.simple-cal-weekdays b{text-align:center;color:#64748b}.simple-cal-month-grid{display:grid;grid-template-columns:repeat(7,minmax(72px,1fr));gap:8px}.simple-cal-month-day{position:relative;min-height:92px;text-align:left;border:1px solid #e2e8f0;background:#fff;border-radius:16px;padding:10px;overflow:hidden;cursor:pointer}.simple-cal-month-day.is-muted{opacity:.38}.simple-cal-month-day.is-selected{outline:3px solid #14b8a6}.simple-cal-month-day span{font-weight:900;color:#0f172a}.simple-cal-month-day b{display:block;margin-top:8px;color:#334155}.simple-cal-month-day small{display:block;color:#64748b;font-weight:700}.simple-cal-month-day i{position:absolute;left:0;bottom:0;height:5px;background:#14b8a6;border-radius:0 999px 999px 0}@media(max-width:900px){.simple-cal-header{flex-direction:column}.simple-cal-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.simple-cal-month-grid{grid-template-columns:repeat(7,minmax(46px,1fr));gap:5px}.simple-cal-month-day{min-height:74px;padding:7px;border-radius:12px}.simple-cal-month-day small{display:none}.simple-cal-actions button,.simple-cal-toolbar button{padding:9px 10px}.simple-cal-shell{padding:10px}}@media(max-width:560px){.simple-cal-metrics{grid-template-columns:1fr}.simple-cal-toolbar strong{min-width:auto}.simple-cal-toolbar input{width:100%}}
+
+/* StayHub v4.5 Simple Calendar - ultra simplified reception view */
+.mini-cal-shell{display:flex;flex-direction:column;gap:14px;padding:16px;background:#f8fafc;min-height:100%}.mini-cal-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.mini-cal-top h1{margin:0 0 4px;font-size:30px;color:#0f172a}.mini-cal-top p{margin:0;color:#64748b;font-weight:700}.mini-cal-top button,.mini-cal-card-head button{border:1px solid #e2e8f0;background:#fff;border-radius:14px;padding:10px 13px;font-weight:900;color:#0f172a;display:inline-flex;align-items:center;gap:7px;cursor:pointer}.mini-cal-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.mini-cal-summary>div{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:14px;box-shadow:0 10px 26px rgba(15,23,42,.05)}.mini-cal-summary small{display:block;color:#64748b;font-weight:800}.mini-cal-summary b{display:block;margin-top:5px;font-size:24px;color:#0f172a}.mini-cal-card{background:#fff;border:1px solid #e2e8f0;border-radius:22px;padding:16px;box-shadow:0 14px 34px rgba(15,23,42,.06)}.mini-cal-card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}.mini-cal-card-head h3{margin:0;font-size:20px;color:#0f172a;text-transform:capitalize}.mini-cal-card-head span{color:#64748b;font-weight:900}.mini-cal-card-head input{border:1px solid #e2e8f0;border-radius:13px;padding:10px 12px;font-weight:900}.mini-cal-days{display:grid;grid-template-columns:repeat(7,minmax(90px,1fr));gap:10px}.mini-cal-day{position:relative;min-height:105px;border:1px solid #e2e8f0;border-radius:18px;padding:12px;text-align:left;background:#fff;cursor:pointer}.mini-cal-day small{display:block;color:#64748b;font-weight:900}.mini-cal-day b{display:block;font-size:28px;color:#0f172a;margin:6px 0}.mini-cal-day span{font-weight:900;color:#475569}.mini-cal-day em{position:absolute;right:9px;top:9px;font-style:normal;background:#0f172a;color:#fff;border-radius:999px;padding:3px 7px;font-size:11px;font-weight:900}.mini-cal-day.selected,.mini-cal-month-cell.selected{outline:3px solid #0f172a}.mini-cal-day.free,.mini-cal-month-cell.free{background:#f0fdf4;border-color:#bbf7d0}.mini-cal-day.busy,.mini-cal-month-cell.busy{background:#fefce8;border-color:#fde68a}.mini-cal-day.full,.mini-cal-month-cell.full{background:#fee2e2;border-color:#fecaca}.mini-cal-day.bad,.mini-cal-month-cell.bad{background:#7f1d1d;color:#fff;border-color:#7f1d1d}.mini-cal-rooms{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.mini-cal-room{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:16px;padding:13px}.mini-cal-room b{display:block;color:#0f172a}.mini-cal-room small{display:block;margin-top:3px;color:#64748b;font-weight:800}.mini-cal-room strong{border-radius:999px;padding:6px 10px;font-size:12px}.mini-cal-room strong.free{background:#dcfce7;color:#166534}.mini-cal-room strong.busy{background:#fef3c7;color:#92400e}.mini-cal-room strong.full{background:#fee2e2;color:#991b1b}.mini-cal-room strong.bad{background:#7f1d1d;color:#fff}.mini-cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px}.mini-cal-weekdays b{text-align:center;color:#64748b;font-size:12px}.mini-cal-month{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}.mini-cal-month-cell{min-height:54px;border:1px solid #e2e8f0;border-radius:13px;background:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center}.mini-cal-month-cell b{font-size:15px}.mini-cal-month-cell small{font-weight:900;color:#64748b}.mini-cal-month-cell.muted{opacity:.35}@media(max-width:900px){.mini-cal-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.mini-cal-days{display:flex;overflow-x:auto;padding-bottom:4px}.mini-cal-day{min-width:118px}.mini-cal-top{flex-direction:column}.mini-cal-shell{padding:10px}.mini-cal-month-cell{min-height:44px;border-radius:10px}.mini-cal-month-card{padding:12px}}@media(max-width:560px){.mini-cal-summary{grid-template-columns:1fr 1fr}.mini-cal-summary b{font-size:20px}.mini-cal-card-head{align-items:flex-start;flex-direction:column}.mini-cal-card-head input{width:100%}.mini-cal-rooms{grid-template-columns:1fr}}
+
+/* StayHub v5.0 Apple UI Foundation */
+.stayhub-v5 {
+  background:
+    radial-gradient(circle at top left, rgba(203, 213, 225, .65), transparent 34%),
+    linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+}
+
+.stayhub-v5 .v5-main {
+  padding-bottom: 112px;
+}
+
+.v5-sidebar.stayhub-sidebar {
+  background: rgba(255,255,255,.72) !important;
+  color: #0f172a !important;
+  border-right: 1px solid rgba(226,232,240,.9) !important;
+  box-shadow: 20px 0 60px rgba(15,23,42,.05) !important;
+  backdrop-filter: blur(22px);
+}
+
+.v5-sidebar .sidebar-head {
+  border-bottom: 1px solid rgba(226,232,240,.9) !important;
+}
+
+.v5-sidebar .sidebar-kicker,
+.v5-sidebar .sidebar-card-sub { color: #64748b !important; }
+.v5-sidebar .sidebar-card-title,
+.v5-sidebar .sidebar-role-text { color: #0f172a !important; }
+
+.v5-sidebar .sidebar-info-card,
+.v5-sidebar .sidebar-role-card {
+  background: rgba(248,250,252,.85) !important;
+  border: 1px solid rgba(226,232,240,.95) !important;
+  box-shadow: 0 10px 25px rgba(15,23,42,.04) !important;
+}
+
+.v5-sidebar .sidebar-nav-item {
+  color: #475569 !important;
+  min-height: 62px;
+  border-radius: 22px;
+  font-weight: 900;
+}
+
+.v5-sidebar .sidebar-nav-item:hover {
+  color: #0f172a !important;
+  background: rgba(241,245,249,.95) !important;
+  transform: translateY(-1px) !important;
+}
+
+.v5-sidebar .sidebar-nav-item.is-active {
+  color: #0f172a !important;
+  background: #ffffff !important;
+  box-shadow: 0 18px 45px rgba(15,23,42,.10) !important;
+  border: 1px solid rgba(226,232,240,.95);
+}
+
+.v5-sidebar .sidebar-nav-item.is-active::before {
+  left: -8px !important;
+  top: 20px !important;
+  bottom: 20px !important;
+  background: #0f172a !important;
+}
+
+.v5-sidebar .sidebar-logout {
+  background: #0f172a !important;
+  box-shadow: 0 14px 35px rgba(15,23,42,.16) !important;
+}
+
+.v5-header {
+  box-shadow: 0 1px 0 rgba(15,23,42,.03), 0 12px 30px rgba(15,23,42,.035);
+}
+
+.v5-today-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  padding: 26px;
+  border-radius: 32px;
+  background: rgba(255,255,255,.82);
+  border: 1px solid rgba(226,232,240,.95);
+  box-shadow: 0 24px 70px rgba(15,23,42,.08);
+  backdrop-filter: blur(18px);
+}
+
+.v5-date-pill {
+  white-space: nowrap;
+  padding: 12px 16px;
+  border-radius: 999px;
+  background: #0f172a;
+  color: white;
+  font-weight: 950;
+  text-transform: capitalize;
+  box-shadow: 0 16px 36px rgba(15,23,42,.14);
+}
+
+.stayhub-v5 .metric-card,
+.stayhub-v5 .card,
+.stayhub-v5 .bg-white.rounded-2xl,
+.stayhub-v5 .bg-white.rounded-xl {
+  border-radius: 28px !important;
+  border-color: rgba(226,232,240,.92) !important;
+  box-shadow: 0 18px 45px rgba(15,23,42,.06) !important;
+}
+
+.stayhub-v5 .btn-primary,
+.stayhub-v5 .btn-primary-soft,
+.stayhub-v5 .btn-secondary,
+.stayhub-v5 .btn-save {
+  border-radius: 999px !important;
+  background: #0f172a !important;
+}
+
+@media (max-width: 768px) {
+  .v5-sidebar.stayhub-sidebar {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: 12px !important;
+    height: 76px !important;
+    min-height: 76px !important;
+    border-radius: 26px !important;
+    border: 1px solid rgba(226,232,240,.95) !important;
+    box-shadow: 0 20px 55px rgba(15,23,42,.18) !important;
+  }
+  .v5-sidebar .sidebar-nav-item {
+    width: 64px !important;
+    min-width: 64px !important;
+    height: 58px !important;
+    border-radius: 20px !important;
+  }
+  .v5-sidebar .sidebar-nav-item.is-active::before { display: none !important; }
+  .v5-today-hero { flex-direction: column; border-radius: 26px; padding: 22px; }
+  .v5-date-pill { white-space: normal; }
+}

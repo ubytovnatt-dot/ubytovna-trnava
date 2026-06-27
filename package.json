@@ -1,6 +1,6 @@
 {
-  "name": "stayhub-v4",
-  "version": "4.4.0",
+  "name": "stayhub-v5-apple-ui",
+  "version": "5.0.0",
   "private": true,
   "type": "module",
   "scripts": {
