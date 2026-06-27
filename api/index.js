@@ -847,6 +847,27 @@ async function validateCheckinPerson(req, db, payload, existingId = null) {
   return { mode: 'insertOrUpdate', booking, capacity };
 }
 
+async function closeBookingWhenNoActivePeople(req, db, person) {
+  if (!person?.booking_id || person.status !== 'checked_out') return;
+  const directDb = adminSupabase || db;
+  const { data: activePeople, error } = await scopedQuery(req, 'checkin_persons', directDb
+    .from('checkin_persons')
+    .select('id')
+  )
+    .eq('booking_id', person.booking_id)
+    .eq('status', 'checked_in');
+  if (error) throw error;
+  if ((activePeople || []).length > 0) return;
+  const updatePayload = { status: 'Ukončená', updated_at: new Date().toISOString() };
+  const result = await scopedQuery(req, 'bookings', directDb
+    .from('bookings')
+    .update(updatePayload)
+    .eq('id', person.booking_id)
+  );
+  if (result.error) throw result.error;
+  await writeAudit(req, 'bookings', 'auto_close_after_checkout', person.booking_id, null, updatePayload);
+}
+
 app.post('/api/:table', async (req, res) => {
   if (!requireSupabase(req, res)) return;
   const table = TABLES[req.params.table];
@@ -1028,8 +1049,10 @@ app.put('/api/:table/:id', async (req, res) => {
       const fallbackData = oldData ? { ...oldData, ...payload, id: req.params.id } : null;
       if (!fallbackData) throw new Error('Zaznam sa nepodarilo aktualizovat alebo vratit zo Supabase.');
       await writeAudit(req, table, 'update', req.params.id, oldData, fallbackData);
+      if (table === 'checkin_persons') await closeBookingWhenNoActivePeople(req, db, fallbackData);
       return res.json({ success: true, data: fallbackData, warning: 'Update nevratil data zo Supabase.' });
     }
+    if (table === 'checkin_persons') await closeBookingWhenNoActivePeople(req, db, data);
     await writeAudit(req, table, 'update', req.params.id, oldData, data);
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
