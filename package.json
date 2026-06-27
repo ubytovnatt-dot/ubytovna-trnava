@@ -1,6 +1,6 @@
 {
-  "name": "stayhub-v3-5a-2-aurora-interactive-timeline",
-  "version": "3.5.2-aurora",
+  "name": "stayhub-v4-unified-reservation-engine",
+  "version": "4.0.0",
   "private": true,
   "type": "module",
   "scripts": {

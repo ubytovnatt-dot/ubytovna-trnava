@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Layers, LayoutGrid, ListChecks, Sparkles } from 'lucide-react';
+import { parseBeds as engineParseBeds, overlapsDates as engineOverlapsDates, addDays as engineAddDays, isActiveReservation, activeBookingBeds, activePeople } from '../core/reservationEngine.js';
 
-const CANCELLED = new Set(['Zrušená', 'Da huy', 'cancelled']);
 
 function isoDate(date) {
   return date.toISOString().slice(0, 10);
@@ -11,11 +11,7 @@ function today() {
   return isoDate(new Date());
 }
 
-function addDays(value, amount) {
-  const d = new Date(value);
-  d.setDate(d.getDate() + amount);
-  return isoDate(d);
-}
+function addDays(value, amount) { return engineAddDays(value, amount); }
 
 function startOfMonth(value) {
   const d = new Date(`${value || today()}T00:00:00`);
@@ -30,18 +26,9 @@ function dayLabel(value) {
   return new Intl.DateTimeFormat('sk-SK', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(new Date(`${value}T00:00:00`));
 }
 
-function parseBeds(booking) {
-  if (Array.isArray(booking?.reserved_beds)) return booking.reserved_beds;
-  if (typeof booking?.reserved_beds === 'string') {
-    try { return JSON.parse(booking.reserved_beds); } catch { return []; }
-  }
-  return booking?.room_id && booking?.bed_code ? [{ room_id: booking.room_id, bed_code: booking.bed_code }] : [];
-}
+function parseBeds(booking) { return engineParseBeds(booking); }
 
-function overlapsDates(aStart, aEnd, bStart, bEnd) {
-  if (!aStart || !aEnd || !bStart || !bEnd) return false;
-  return aStart < bEnd && aEnd > bStart;
-}
+function overlapsDates(aStart, aEnd, bStart, bEnd) { return engineOverlapsDates(aStart, aEnd, bStart, bEnd); }
 
 function roomLabel(room) {
   return `P${String(room?.room_number || '').padStart(3, '0')}`;
@@ -61,7 +48,7 @@ function compareIso(a, b) {
 
 function normalizeBookings(bookings) {
   return (bookings || [])
-    .filter((booking) => !CANCELLED.has(booking.status))
+    .filter((booking) => isActiveReservation(booking))
     .slice()
     .sort((a, b) => {
       const byCheckIn = compareIso(a.check_in_date, b.check_in_date);
@@ -73,8 +60,7 @@ function normalizeBookings(bookings) {
 }
 
 function normalizePeople(people) {
-  return (people || [])
-    .filter((p) => p.status === 'checked_in')
+  return activePeople(people || [])
     .slice()
     .sort((a, b) => {
       const aStart = a.checkin_at || a.actual_check_in || a.created_at;
@@ -96,7 +82,7 @@ function buildBedRows(rooms) {
 
 function eventStartForRow(row, bookings, people) {
   const bookingDates = normalizeBookings(bookings).flatMap((booking) => {
-    const hasBed = parseBeds(booking).some((bed) => String(bed.room_id) === String(row.room.id) && String(bed.bed_code) === String(row.bed_code));
+    const hasBed = activeBookingBeds(booking, people).some((bed) => String(bed.room_id) === String(row.room.id) && String(bed.bed_code) === String(row.bed_code));
     return hasBed ? [safeDate(booking.check_in_date)] : [];
   });
   const peopleDates = normalizePeople(people).flatMap((person) => {
@@ -126,7 +112,7 @@ function getCellEvents(row, day, bookings, people) {
 
   const bookingHits = normalizeBookings(bookings).filter((booking) => {
     if (!overlapsDates(day, addDays(day, 1), booking.check_in_date, booking.check_out_date)) return false;
-    return parseBeds(booking).some((bed) => String(bed.room_id) === String(row.room.id) && String(bed.bed_code) === String(row.bed_code));
+    return activeBookingBeds(booking, people).some((bed) => String(bed.room_id) === String(row.room.id) && String(bed.bed_code) === String(row.bed_code));
   });
 
   return { checked, bookings: bookingHits };
@@ -216,7 +202,7 @@ function getTimelineSegments(row, days, bookings, people) {
   const rangeStart = days[0];
   const rangeEnd = addDays(days[days.length - 1], 1);
   const bookingSegments = normalizeBookings(bookings).flatMap((booking) => {
-    const hasBed = parseBeds(booking).some((bed) => String(bed.room_id) === String(row.room.id) && String(bed.bed_code) === String(row.bed_code));
+    const hasBed = activeBookingBeds(booking, people).some((bed) => String(bed.room_id) === String(row.room.id) && String(bed.bed_code) === String(row.bed_code));
     if (!hasBed || !overlapsDates(rangeStart, rangeEnd, booking.check_in_date, booking.check_out_date)) return [];
     const title = booking.company_name || booking.guest_name || booking.contact_person || 'Rezervácia';
     return [{
@@ -381,9 +367,9 @@ export default function AuroraCalendar({ rooms = [], bookings = [], people = [] 
   return <section className="aurora-shell">
     <div className="aurora-hero">
       <div>
-        <div className="aurora-kicker"><Sparkles size={16} /> StayHub v3.5A.2 · Aurora Interactive Timeline</div>
+        <div className="aurora-kicker"><Sparkles size={16} /> StayHub v4.0 · Unified Reservation Engine</div>
         <h1>Aurora Calendar</h1>
-        <p>Samostatná plánovacia vrstva s interaktívnou timeline. Obsadenosť sa teraz zoraďuje chronologicky podľa check-in dátumu.</p>
+        <p>Aurora teraz číta jednotný Reservation Engine. Rezervácie, osoby, izby a lôžka majú jeden zdroj pravdy.</p>
       </div>
       <div className="aurora-switcher">
         <button className={view === 'timeline' ? 'is-active' : ''} onClick={() => setView('timeline')}><Layers size={17}/> Timeline</button>
@@ -414,6 +400,6 @@ export default function AuroraCalendar({ rooms = [], bookings = [], people = [] 
     {view === 'month' && <div className="aurora-split"><AuroraMonth anchor={anchor} bedRows={bedRows} bookings={sortedBookings} people={sortedPeople} selectedDay={selectedDay} onSelectDay={setSelectedDay} /><AuroraDayPanel selectedDay={selectedDay} bedRows={bedRows} bookings={sortedBookings} people={sortedPeople} /></div>}
     {view === 'mobile' && <AuroraMobileDay days={days} bedRows={bedRows} bookings={sortedBookings} people={sortedPeople} selectedDay={selectedDay} onSelectDay={setSelectedDay} />}
 
-    <div className="aurora-note"><LayoutGrid size={18}/><span>v3.5A.2: interaktívne časové bloky, chronologické triedenie podľa check-in a zvýraznenie prekrytých konfliktov. Drag & drop zápis príde v ďalšej fáze.</span></div>
+    <div className="aurora-note"><LayoutGrid size={18}/><span>v4.0 URE: timeline, dashboard a izby čítajú jednotný engine. Po check-oute sa lôžko uvoľní vo všetkých moduloch.</span></div>
   </section>;
 }

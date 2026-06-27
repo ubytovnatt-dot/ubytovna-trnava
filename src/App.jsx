@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { LANGUAGES, translateDom, t, pricingLabel } from './i18n.js';
 import AuroraCalendar from './aurora/AuroraCalendar.jsx';
+import { parseBeds as engineParseBeds, overlapsDates as engineOverlapsDates, roomOccupancy, bookingHasNoActivePeopleAfterCheckout, activeReservationsForDay, COMPLETED_STATUSES, CANCELLED_STATUSES } from './core/reservationEngine.js';
 import { Menu, X, LogOut, Plus, Edit2, Trash2, Home, Calendar, CreditCard, Building2, Settings, UserCheck, DoorOpen, FileText, BarChart3, LayoutGrid, Download, Eye } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -110,11 +111,7 @@ const eur = (n) => `€${Number(n || 0).toFixed(2)}`;
 
 
 
-function parseBeds(b) {
-  if (Array.isArray(b?.reserved_beds)) return b.reserved_beds;
-  if (typeof b?.reserved_beds === 'string') { try { return JSON.parse(b.reserved_beds); } catch { return []; } }
-  return b?.room_id && b?.bed_code ? [{ room_id: b.room_id, bed_code: b.bed_code }] : [];
-}
+function parseBeds(b) { return engineParseBeds(b); }
 async function api(path, options = {}) {
   const headers = {
     'Content-Type': 'application/json',
@@ -129,14 +126,9 @@ async function api(path, options = {}) {
 }
 function bedLabel(b) { return `${b.room_label || `P${String(b.room_number || '').padStart(3, '0')}`}-${b.bed_code}`; }
 
-function overlapsDates(aStart, aEnd, bStart, bEnd) {
-  if (!aStart || !aEnd || !bStart || !bEnd) return false;
-  return aStart < bEnd && aEnd > bStart;
-}
-function activeBookingsForToday(bookings) {
-  const t = today();
-  const cancelled = new Set(['Zrušená', 'Da huy', 'cancelled']);
-  return (bookings || []).filter(b => !cancelled.has(b.status) && overlapsDates(t, nextDay(t), b.check_in_date, b.check_out_date));
+function overlapsDates(aStart, aEnd, bStart, bEnd) { return engineOverlapsDates(aStart, aEnd, bStart, bEnd); }
+function activeBookingsForToday(bookings, people = []) {
+  return activeReservationsForDay(bookings, people, today());
 }
 function nextDay(d) {
   const x = new Date(d);
@@ -145,24 +137,9 @@ function nextDay(d) {
 }
 function roomLabel(room) { return `P${String(room?.room_number || '').padStart(3, '0')}`; }
 function getRoomOccupancy(room, bookings = [], people = []) {
-  const roomId = String(room.id);
-  const activePeople = (people || []).filter(p => p.status === 'checked_in' && String(p.room_id) === roomId);
-  const occupied = new Set(activePeople.map(p => String(p.bed_code)));
-  const reserved = new Set();
-  activeBookingsForToday(bookings).forEach(b => parseBeds(b).forEach(x => {
-    if (String(x.room_id) === roomId && !occupied.has(String(x.bed_code))) reserved.add(String(x.bed_code));
-  }));
-  const capacity = Number(room.capacity || 0);
-  return {
-    capacity,
-    occupied: occupied.size,
-    reserved: reserved.size,
-    free: Math.max(0, capacity - occupied.size - reserved.size),
-    rate: capacity ? Math.round(((occupied.size + reserved.size) / capacity) * 100) : 0,
-    occupiedBeds: [...occupied],
-    reservedBeds: [...reserved]
-  };
+  return roomOccupancy(room, bookings, people, today());
 }
+
 function occupancyClass(o) {
   if (!o.capacity) return 'border-gray-300';
   if (o.occupied + o.reserved >= o.capacity) return 'border-red-500';
@@ -494,7 +471,7 @@ function BookingModal({ booking, rooms, companies, onClose, onSave }) { const de
 
 function CheckIn({ bookings, companies, people, onRefresh }) {
   const [booking,setBooking]=useState(null);
-  const activeBookings=bookings.filter(b=>!['Ukončená','Zrušená','Da huy','cancelled'].includes(b.status));
+  const activeBookings=bookings.filter(b=>!COMPLETED_STATUSES.has(b.status)&&!CANCELLED_STATUSES.has(b.status));
   const checkinStats = (b) => {
     const beds = parseBeds(b);
     const allowedBeds = new Set(beds.map(x => `${String(x.room_id)}:${String(x.bed_code)}`));
@@ -630,7 +607,22 @@ function CheckInModal({ booking, people, onClose, onSaved }) {
   </Modal>;
 }
 
-function CheckOut({ people, onRefresh }) { const [person,setPerson]=useState(null); const active=people.filter(p=>p.status==='checked_in'); async function save(row){ try{ await api(`/api/checkin-persons/${row.id}`,{method:'PUT',body:JSON.stringify({...row,status:'checked_out',checkout_at:new Date().toISOString()})}); setPerson(null); onRefresh(); }catch(e){alert(e.message)} } return <div className="space-y-6"><Top title="🚪 Check-out" onRefresh={onRefresh}/><Table heads={['Osoba','Firma','Izba/lôžko','Očakávaný odchod','Akcia']}>{active.map(p=><tr key={p.id} className="border-t"><Td>{p.first_name} {p.last_name}</Td><Td>{p.company_name||'—'}</Td><Td>{bedLabel(p)}</Td><Td>{p.expected_checkout_date}</Td><Td><button onClick={()=>setPerson(p)} className="bg-purple-600 text-white px-4 py-2 rounded">Check-out</button></Td></tr>)}</Table>{person&&<CheckOutModal person={person} onClose={()=>setPerson(null)} onSave={save}/>}</div>; }
+function CheckOut({ people, onRefresh }) {
+  const [person,setPerson]=useState(null);
+  const active=people.filter(p=>p.status==='checked_in');
+  async function save(row){
+    try{
+      const checkoutAt = new Date().toISOString();
+      await api(`/api/checkin-persons/${row.id}`,{method:'PUT',body:JSON.stringify({...row,status:'checked_out',checkout_at:checkoutAt,actual_check_out:today()})});
+      if(row.booking_id && bookingHasNoActivePeopleAfterCheckout(people, row.booking_id, row.id)){
+        await api(`/api/bookings/${row.booking_id}`,{method:'PUT',body:JSON.stringify({status:'Ukončená',actual_check_out:today(),checked_out_at:checkoutAt})});
+      }
+      setPerson(null);
+      onRefresh();
+    }catch(e){alert(e.message)}
+  }
+  return <div className="space-y-6"><Top title="🚪 Check-out" onRefresh={onRefresh}/><div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 text-sm text-slate-600">v4 URE: Check-out ukončí osobu a ak v rezervácii nezostal žiadny aktívny hosť, automaticky ukončí aj rezerváciu. Izba a lôžko sa potom uvoľnia vo všetkých moduloch.</div><Table heads={['Osoba','Firma','Izba/lôžko','Očakávaný odchod','Akcia']}>{active.map(p=><tr key={p.id} className="border-t"><Td>{p.first_name} {p.last_name}</Td><Td>{p.company_name||'—'}</Td><Td>{bedLabel(p)}</Td><Td>{p.expected_checkout_date}</Td><Td><button onClick={()=>setPerson(p)} className="bg-purple-600 text-white px-4 py-2 rounded">Check-out</button></Td></tr>)}</Table>{person&&<CheckOutModal person={person} onClose={()=>setPerson(null)} onSave={save}/>}</div>;
+}
 function CheckOutModal({ person, onClose, onSave }) { const [f,setF]=useState({...person,keys_returned:person.keys_returned||'Áno',room_condition_checkout:person.room_condition_checkout||'OK',damage_amount:person.damage_amount||0,checkout_note:person.checkout_note||''}); const sf=(k,v)=>setF(p=>({...p,[k]:v})); return <Modal title={`Check-out: ${person.first_name} ${person.last_name}`} onClose={onClose} onSave={()=>onSave(f)}><Grid><Field label="Izba/lôžko" value={bedLabel(person)} disabled/><Field label="Skutočný odchod" type="date" value={today()} disabled/><Select label="Kľúče vrátené" value={f.keys_returned} onChange={v=>sf('keys_returned',v)} opts={[['Áno','Áno'],['Nie','Nie']]}/><Select label="Stav izby" value={f.room_condition_checkout} onChange={v=>sf('room_condition_checkout',v)} opts={[['OK','OK'],['Poškodené','Poškodené'],['Znečistené','Znečistené']]}/><Field label="Škoda / doplatok" type="number" value={f.damage_amount} onChange={v=>sf('damage_amount',v)}/></Grid><Text label="Poznámka" value={f.checkout_note} onChange={v=>sf('checkout_note',v)}/></Modal>; }
 
 function Payments({ payments, bookings, companies, onRefresh, role }) { const [show,setShow]=useState(false); const [edit,setEdit]=useState(null); const [msg,setMsg]=useState(null); const stats=useMemo(()=>({paid:payments.filter(p=>['Zaplatené','paid'].includes(p.status)).reduce((s,p)=>s+Number(p.amount||0),0),pending:payments.filter(p=>!['Zaplatené','paid'].includes(p.status)).reduce((s,p)=>s+Number(p.amount||0),0),overdue:payments.filter(p=>!['Zaplatené','paid'].includes(p.status)&&p.due_date&&p.due_date<today()).length}),[payments]); async function save(payload){ try{ const saved = await api(edit?`/api/payments/${edit.id}`:'/api/payments',{method:edit?'PUT':'POST',body:JSON.stringify(payload)}); setShow(false); setEdit(null); setMsg('Platba uložená.'); await onRefresh(); }catch(e){setMsg(`Chyba: ${e.message}`);} } async function del(p){ if(!confirm('Vymazať platbu?')) return; await api(`/api/payments/${p.id}`,{method:'DELETE'}); onRefresh(); } return <div className="space-y-6"><Top title="💰 Platby" action="Nová platba" onAction={()=>{setEdit(null);setShow(true)}} onRefresh={onRefresh}/><div className="grid md:grid-cols-3 gap-4"><Card title="Zaplatené" value={eur(stats.paid)} color="border-green-500"/><Card title="Čaká" value={eur(stats.pending)} color="border-yellow-500"/><Card title="Po splatnosti" value={stats.overdue} color="border-red-500"/></div>{msg&&<Banner type={msg.startsWith('Chyba')?'error':undefined}>{msg}</Banner>}<Table heads={['Kód','Platiteľ','Za čo / koho','Rezervácia','Izba/lôžka','Mesiac','Suma','Stav','Akcie']}>{payments.map(p=><tr key={p.id} className="border-t"><Td teal>{p.payment_code}</Td><Td>{p.payer_name}</Td><Td>{p.tenant_name}</Td><Td>{bookings.find(b=>b.id===p.booking_id)?.booking_code||'—'}</Td><Td>{p.room_label}</Td><Td>{p.payment_month}</Td><Td>{eur(p.amount)}</Td><Td><Badge green={p.status==='Zaplatené'}>{p.status}</Badge></Td><Td><div className="flex gap-2"><Btn onClick={()=>{setEdit(p);setShow(true)}}><Edit2 size={16}/></Btn>{canDelete(role)&&<Btn red onClick={()=>del(p)}><Trash2 size={16}/></Btn>}</div></Td></tr>)}</Table>{show&&<PaymentModal payment={edit} bookings={bookings} companies={companies} onClose={()=>setShow(false)} onSave={save}/>}</div>; }
