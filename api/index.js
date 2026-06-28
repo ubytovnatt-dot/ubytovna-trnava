@@ -13,7 +13,7 @@ const authSupabase = supabaseUrl && anonKey ? createClient(supabaseUrl, anonKey)
 const hasServiceRoleKey = Boolean(serviceRoleKey) && !serviceRoleKey.startsWith('sb_publishable_');
 const adminSupabase = supabaseUrl && hasServiceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
 
-const DOCUMENT_BUCKET = process.env.SUPABASE_DOCUMENTS_BUCKET || 'stayhub-private';
+const DOCUMENT_BUCKET = process.env.SUPABASE_DOCUMENTS_BUCKET || 'stayhub-documents';
 const DOCUMENT_FOLDERS = {
   passport: 'passport',
   pas: 'passport',
@@ -131,10 +131,11 @@ const TABLES = {
   'checkin-persons': 'checkin_persons',
   checkin_persons: 'checkin_persons',
   documents: 'documents',
+  beds: 'beds',
   audit_logs: 'audit_logs',
   profiles: 'profiles'
 };
-const PROPERTY_TABLES = new Set(['rooms', 'bookings', 'payments', 'companies', 'checkin_persons', 'documents']);
+const PROPERTY_TABLES = new Set(['rooms', 'beds', 'bookings', 'payments', 'companies', 'checkin_persons', 'documents']);
 
 const cancelled = new Set(['cancelled', 'canceled', 'Da huy', 'Đã hủy', 'Zrušená', 'Zrusena', 'zrušené']);
 const paid = new Set(['paid', 'Da thanh toan', 'Đã thanh toán', 'Zaplatené', 'zaplatené']);
@@ -395,6 +396,11 @@ function canUseTable(role, table, action) {
       write: ['admin','manager','reception'],
       delete: ['admin']
     },
+    beds: {
+      read: ['admin','manager','reception','housekeeping','viewer'],
+      write: ['admin','manager'],
+      delete: ['admin']
+    },
     payments: {
       read: ['admin','manager','reception','accounting'],
       write: ['admin','manager','reception','accounting'],
@@ -431,6 +437,7 @@ function canUseTable(role, table, action) {
 
 function orderBy(table) {
   if (table === 'rooms') return ['room_number', true];
+  if (table === 'beds') return ['sort_order', true];
   if (table === 'companies') return ['company_name', true];
   if (table === 'bookings') return ['check_in_date', false];
   if (table === 'payments') return ['payment_month', false];
@@ -573,7 +580,7 @@ function stripTransientFields(table, payload) {
   return out;
 }
 
-app.get('/api', (_req, res) => res.json({ success: true, name: 'StayHub API v3.32' }));
+app.get('/api', (_req, res) => res.json({ success: true, name: 'StayHub API v5.2 Reservation Engine Refactor' }));
 app.get('/api/health', (_req, res) => res.json({
   success: true,
   status: 'OK',
@@ -1036,11 +1043,7 @@ app.post('/api/:table', async (req, res) => {
       const conflicts = await validateBookingBeds(req, db, payload);
       if (conflicts) return res.status(409).json({ success: false, error: 'KONFLIKT DÁTUMOV: niektoré pridelené lôžko je v tomto termíne už rezervované.', conflicts });
     }
-    if (table === 'documents') {
-    delete out._ocr_base64;
-    delete out.ocr_result;
-  }
-  if (table === 'payments') {
+    if (table === 'payments') {
       if (!payload.payment_code) payload.payment_code = `P${Date.now()}`;
       if (!payload.invoice_number) payload.invoice_number = invoiceNumber('INV');
       if (!payload.variable_symbol) payload.variable_symbol = String(payload.payment_code || '').replace(/\D/g, '').slice(-10) || String(Date.now()).slice(-10);
@@ -1063,11 +1066,7 @@ app.post('/api/:table', async (req, res) => {
     payload = stripTransientFields(table, payload);
 
     let insertedRows, error;
-    if (table === 'documents') {
-    delete out._ocr_base64;
-    delete out.ocr_result;
-  }
-  if (table === 'payments') {
+    if (table === 'payments') {
       const directDb = adminSupabase || db;
       if (req.propertyId && !payload.property_id) payload.property_id = req.propertyId;
       const result = await directDb.from(table).insert(payload).select('*');
@@ -1108,11 +1107,7 @@ app.put('/api/:table/:id', async (req, res) => {
       await validateCheckinPerson(req, db, payload, req.params.id);
       payload = stripTransientFields(table, payload);
     }
-    if (table === 'documents') {
-    delete out._ocr_base64;
-    delete out.ocr_result;
-  }
-  if (table === 'payments') {
+    if (table === 'payments') {
       payload = stripTransientFields(table, payload);
 
       // Payments fix v3.23:

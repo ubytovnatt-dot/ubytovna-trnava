@@ -82,3 +82,17 @@ Vo Verceli nastav:
 SUPABASE_DOCUMENTS_BUCKET=stayhub-private
 SUPABASE_SERVICE_ROLE_KEY=...
 ```
+
+## StayHub v5.1 Core Architecture
+
+StayHub v5.1 uses reservation as the single source of truth. The existing tables remain compatible:
+
+- `bookings` = reservations
+- `checkin_persons` = persons
+- `stayhub-documents` = private document bucket for AI OCR uploads
+
+Before production OCR, confirm that Supabase Storage has the private bucket `stayhub-documents` and run:
+
+```sql
+supabase/migrations/20260627_stayhub_v5_1_core_architecture.sql
+```
