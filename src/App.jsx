@@ -626,17 +626,18 @@ function CheckInModal({ booking, people, onClose, onSaved }) {
     try{
       const base64=await readFileAsBase64(file);
       const row=rows[i];
+      const previewUrl = URL.createObjectURL(file);
       const uploaded=await api('/api/documents/upload',{method:'POST',body:JSON.stringify({filename:file.name,mime_type:file.type,base64,document_type:row.document_type,company_id:booking.company_id||row.company_id})});
-      updateMany(i,{_ocr_base64:base64,document_storage_path:uploaded.storage_path||'',document_file_url:uploaded.file_url||'',document_file_name:file.name,document_mime_type:file.type,document_size_bytes:file.size,ocr_status:'uploaded'});
+      updateMany(i,{_ocr_base64:base64,document_storage_path:uploaded.storage_path||'',document_file_url:uploaded.file_url||previewUrl,document_preview_url:previewUrl,document_file_name:file.name,document_mime_type:file.type,document_size_bytes:file.size,ocr_status:'uploaded'});
     }catch(e){setError(e.message||'Upload dokumentu zlyhal.');}
     finally{setBusy('');}
   }
   async function runOcr(i){
     const row=rows[i];
-    if(!row._ocr_base64 && !row.document_file_url) return setError('Najprv nahraj alebo odfoť doklad.');
+    if(!row._ocr_base64 && !row.document_file_url && !row.document_preview_url) return setError('Najprv nahraj alebo odfoť doklad.');
     setError(''); setBusy(`ocr-${i}`);
     try{
-      const result=await api('/api/documents/ocr',{method:'POST',body:JSON.stringify({base64:row._ocr_base64,file_url:row.document_file_url,mime_type:row.document_mime_type,document_type:row.document_type})});
+      const result=await api('/api/documents/ocr',{method:'POST',body:JSON.stringify({base64:row._ocr_base64,file_url:row.document_file_url||row.document_preview_url,mime_type:row.document_mime_type,document_type:row.document_type})});
       const names=result.full_name?splitFullName(result.full_name):{};
       updateMany(i,{...names,passport_no:result.document_number||row.passport_no,nationality:result.nationality||row.nationality,issue_date:result.issue_date||row.issue_date,expiry_date:result.expiry_date||row.expiry_date,ocr_status:'completed',ocr_json:result,ocr_note:result.summary||'OCR spracované'});
     }catch(e){update(i,'ocr_status','failed'); setError(e.message||'AI OCR zlyhalo.');}
@@ -652,7 +653,7 @@ function CheckInModal({ booking, people, onClose, onSaved }) {
       if(uniqueBeds.size !== filledRows.length) return setError('Jedno lôžko je použité viackrát. Skontroluj check-in osoby.');
       for(const row of filledRows){
         const personPayload={...row,status:'checked_in',checkin_at:row.checkin_at||new Date().toISOString(),checked_in_at:row.checked_in_at||new Date().toISOString(),actual_check_in:row.actual_check_in||new Date().toISOString(),expected_checkout_date:row.expected_checkout_date||booking.check_out_date,booking_capacity:bookingCapacity,requested_beds:booking.requested_beds||bookingCapacity,beds_count:booking.beds_count||bookingCapacity,reserved_beds:beds,document_number:row.passport_no,document_storage_path:row.document_storage_path||null,ocr_status:row.ocr_status||'not_started',ocr_json:row.ocr_json||null};
-        delete personPayload._ocr_base64; delete personPayload.document_file_url; delete personPayload.document_file_name; delete personPayload.document_mime_type; delete personPayload.document_size_bytes; delete personPayload.ocr_note;
+        delete personPayload._ocr_base64; delete personPayload.document_file_url; delete personPayload.document_preview_url; delete personPayload.document_file_name; delete personPayload.document_mime_type; delete personPayload.document_size_bytes; delete personPayload.ocr_note;
         const savedPerson = row.id ? await api(`/api/checkin-persons/${row.id}`,{method:'PUT',body:JSON.stringify(personPayload)}) : await api('/api/checkin-persons',{method:'POST',body:JSON.stringify(personPayload)});
         if(row.document_storage_path){
           const personId=savedPerson?.id || row.id || null;
@@ -697,7 +698,7 @@ function CheckInModal({ booking, people, onClose, onSaved }) {
           </div>
           {(current.document_file_name||current.document_storage_path) && <div className="mt-4 rounded-2xl bg-white border p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div><div className="font-black">{current.document_file_name||'Nahratý doklad'}</div><div className="text-xs text-slate-500 break-all">{current.document_storage_path}</div></div>
-            <div className="flex gap-2">{current.document_file_url && <a className="btn-muted" href={current.document_file_url} target="_blank">Náhľad</a>}<button type="button" className="btn-primary-soft" disabled={busy===`ocr-${selected}`} onClick={()=>runOcr(selected)}>{busy===`ocr-${selected}`?'AI číta…':'AI OCR'}</button></div>
+            <div className="flex flex-wrap gap-2">{(current.document_preview_url||current.document_file_url) && <a className="btn-muted" href={current.document_preview_url||current.document_file_url} target="_blank" rel="noreferrer">Skontrolovať fotku</a>}<button type="button" className="btn-primary-soft" disabled={busy===`ocr-${selected}`} onClick={()=>runOcr(selected)}>{busy===`ocr-${selected}`?'AI číta…':'AI OCR'}</button></div>
           </div>}
           {current.ocr_status==='completed' && <div className="mt-3 text-sm font-bold text-green-700">OCR spracované. Skontroluj údaje pred potvrdením.</div>}
         </div>
@@ -838,11 +839,11 @@ function DocumentModal({ document, people, companies, onClose, onSave }) {
 
 
   async function runOcr(){
-    if(!ocrBase64 && !f.file_url){ setUploadError('Najprv nahraj alebo odfoť dokument.'); return; }
+    if(!ocrBase64 && !f.file_url && !f.preview_url){ setUploadError('Najprv nahraj alebo odfoť dokument.'); return; }
     setUploadError('');
     setOcrLoading(true);
     try{
-      const result = await api('/api/documents/ocr', { method:'POST', body: JSON.stringify({ base64: ocrBase64, file_url:f.file_url, mime_type:f.mime_type, document_type:f.document_type }) });
+      const result = await api('/api/documents/ocr', { method:'POST', body: JSON.stringify({ base64: ocrBase64, file_url:f.file_url||f.preview_url, mime_type:f.mime_type, document_type:f.document_type }) });
       setF(p=>({
         ...p,
         document_number: result.document_number || p.document_number,
@@ -882,7 +883,7 @@ function DocumentModal({ document, people, companies, onClose, onSave }) {
           <div className="font-black text-slate-950">{f.file_name || 'Nahratý dokument'}</div>
           <div className="text-xs text-slate-500 break-all">{f.storage_path || f.file_url}</div>
         </div>
-        <div className="flex gap-2">{f.file_url && <a className="btn-muted text-center" href={f.file_url} target="_blank">Náhľad</a>}<button type="button" className="btn-primary-soft" onClick={runOcr} disabled={ocrLoading}>{ocrLoading ? 'AI číta…' : 'AI OCR'}</button></div>
+        <div className="flex gap-2">{(f.preview_url||f.file_url) && <a className="btn-muted text-center" href={f.preview_url||f.file_url} target="_blank" rel="noreferrer">Skontrolovať fotku</a>}<button type="button" className="btn-primary-soft" onClick={runOcr} disabled={ocrLoading}>{ocrLoading ? 'AI číta…' : 'AI OCR'}</button></div>
       </div>}
     </div>
 

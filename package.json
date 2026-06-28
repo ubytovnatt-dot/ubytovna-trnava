@@ -1,6 +1,6 @@
 {
-  "name": "stayhub-v5-payment-engine",
-  "version": "5.4.0",
+  "name": "stayhub-v5-ocr-mobile-fix",
+  "version": "5.4.1",
   "private": true,
   "type": "module",
   "scripts": {

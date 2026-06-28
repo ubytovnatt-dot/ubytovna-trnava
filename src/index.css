@@ -1227,3 +1227,89 @@ body {
   .v5-today-hero { flex-direction: column; border-radius: 26px; padding: 22px; }
   .v5-date-pill { white-space: normal; }
 }
+
+/* StayHub v5.4.1 – Mobile full-screen Apple menu */
+@media (max-width: 768px) {
+  .v5-sidebar.stayhub-sidebar {
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    max-width: none !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    border-radius: 0 !important;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)) !important;
+    background: rgba(248, 250, 252, .96) !important;
+    color: #0f172a !important;
+    transform: translateY(110%) !important;
+    z-index: 120 !important;
+    display: flex !important;
+  }
+
+  .v5-sidebar.stayhub-sidebar.w-72 {
+    transform: translateY(0) !important;
+  }
+
+  .v5-sidebar.stayhub-sidebar.w-20 {
+    transform: translateY(110%) !important;
+  }
+
+  .v5-sidebar .sidebar-head,
+  .v5-sidebar .p-4.border-t {
+    display: block !important;
+  }
+
+  .v5-sidebar .sidebar-head {
+    padding: 18px 8px 14px !important;
+  }
+
+  .v5-sidebar .sidebar-nav {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    padding: 14px 0 !important;
+    overflow-y: auto !important;
+  }
+
+  .v5-sidebar .sidebar-nav-item {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 76px !important;
+    height: auto !important;
+    justify-content: flex-start !important;
+    gap: 16px !important;
+    padding: 16px 18px !important;
+    border-radius: 24px !important;
+    background: #fff !important;
+    border: 1px solid rgba(226,232,240,.95) !important;
+    box-shadow: 0 14px 32px rgba(15,23,42,.06) !important;
+  }
+
+  .v5-sidebar .sidebar-icon-wrap {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 16px !important;
+    background: #f1f5f9 !important;
+  }
+
+  .v5-sidebar .sidebar-label {
+    display: inline !important;
+    font-size: 17px !important;
+    color: #0f172a !important;
+  }
+
+  .mobile-menu-overlay.is-open {
+    display: none !important;
+  }
+
+  .v5-menu-toggle {
+    position: relative !important;
+    z-index: 140 !important;
+  }
+}

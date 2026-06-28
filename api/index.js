@@ -94,9 +94,10 @@ function fallbackOcrFromText(text = '') {
 
 async function openAiOcr({ base64, file_url, mime_type, document_type }) {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) throw new Error('Chýba OPENAI_API_KEY vo Vercel Environment Variables. Bez neho AI OCR nevie čítať doklady.');
   const imageUrl = base64 || file_url;
-  if (!imageUrl || String(mime_type || '').includes('pdf')) return null;
+  if (!imageUrl) throw new Error('Chýba obrázok alebo link na dokument pre AI OCR.');
+  if (String(mime_type || '').includes('pdf')) throw new Error('AI OCR v tejto verzii podporuje fotky dokladov JPG/PNG/WEBP/HEIC. PDF prosím nahraj ako fotografiu alebo screenshot.');
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -990,8 +991,10 @@ app.post('/api/documents/ocr', async (req, res) => {
   if (!canUseTable(req.role, 'documents', 'write')) return res.status(403).json({ success: false, error: 'Na AI OCR nemáš oprávnenie.' });
   try {
     const { base64, file_url, mime_type, document_type, raw_text } = req.body || {};
-    const ai = await openAiOcr({ base64, file_url, mime_type, document_type });
-    const result = ai || fallbackOcrFromText(raw_text || '');
+    if (raw_text && !base64 && !file_url) {
+      return res.json({ success: true, data: fallbackOcrFromText(raw_text || '') });
+    }
+    const result = await openAiOcr({ base64, file_url, mime_type, document_type });
     res.json({ success: true, data: result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message || 'AI OCR zlyhalo.' });
