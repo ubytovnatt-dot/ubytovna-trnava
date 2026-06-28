@@ -677,6 +677,31 @@ function cleanPayload(table, payload) {
   return out;
 }
 
+
+async function syncBookingPaymentTotals(req, db, bookingId) {
+  if (!bookingId) return null;
+  const directDb = adminSupabase || db;
+  const { data: booking, error: bookingError } = await scopedQuery(req, 'bookings', directDb.from('bookings').select('*')).eq('id', bookingId).maybeSingle();
+  if (bookingError) throw bookingError;
+  if (!booking) return null;
+  const { data: payments, error: paymentError } = await scopedQuery(req, 'payments', directDb.from('payments').select('*')).eq('booking_id', bookingId);
+  if (paymentError) throw paymentError;
+  const paidAmount = (payments || [])
+    .filter((payment) => paid.has(payment.status))
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const total = Number(booking.total_price || 0);
+  const balance = Math.max(0, total - paidAmount);
+  const nextPaymentStatus = total > 0 && balance <= 0 ? 'paid' : (paidAmount > 0 ? 'partial' : 'unpaid');
+  const update = {
+    paid_amount: money(paidAmount),
+    payment_status: nextPaymentStatus,
+    updated_at: new Date().toISOString()
+  };
+  const { data: saved, error: updateError } = await directDb.from('bookings').update(update).eq('id', bookingId).select('*').maybeSingle();
+  if (updateError) throw updateError;
+  return saved || { ...booking, ...update };
+}
+
 function stripTransientFields(table, payload) {
   const out = { ...payload };
   if (table === 'checkin_persons') {
@@ -703,7 +728,7 @@ function stripTransientFields(table, payload) {
   return out;
 }
 
-app.get('/api', (_req, res) => res.json({ success: true, name: 'StayHub API v5.3.2 Reservation Engine Fix' }));
+app.get('/api', (_req, res) => res.json({ success: true, name: 'StayHub API v5.4 Payment Engine' }));
 app.get('/api/health', (_req, res) => res.json({
   success: true,
   status: 'OK',
@@ -1232,6 +1257,7 @@ app.post('/api/:table', async (req, res) => {
     if (!data) throw new Error('Zaznam sa vytvoril bez navratovych dat. Skontroluj Supabase RLS/select policy pre tuto tabulku.');
     let syncedBooking = null;
     if (table === 'checkin_persons') syncedBooking = await syncBookingAfterPersonChange(req, db, data);
+    if (table === 'payments') syncedBooking = await syncBookingPaymentTotals(req, db, data.booking_id);
     await writeAudit(req, table, 'create', data?.id, null, data);
     res.status(201).json({ success: true, data, booking: syncedBooking });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
@@ -1364,6 +1390,7 @@ app.put('/api/:table/:id', async (req, res) => {
     }
     let syncedBooking = null;
     if (table === 'checkin_persons') syncedBooking = await syncBookingAfterPersonChange(req, db, data);
+    if (table === 'payments') syncedBooking = await syncBookingPaymentTotals(req, db, data.booking_id || oldData?.booking_id);
     await writeAudit(req, table, 'update', req.params.id, oldData, data);
     res.json({ success: true, data, booking: syncedBooking });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
