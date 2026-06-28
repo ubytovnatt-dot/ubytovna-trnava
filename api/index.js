@@ -490,13 +490,131 @@ function normalizeBeds(b) {
   return beds || [];
 }
 
+
+function canonicalOperationalStatus(status) {
+  const s = String(status || '').trim();
+  if (['checked_out','Ukončená','Dokončená','completed','archived'].includes(s)) return 'checked_out';
+  if (['checked_in','Check-in','occupied','Ubytovaný','Đang ở'].includes(s)) return 'checked_in';
+  if (['cancelled','canceled','Zrušená','Zrusena','Da huy','Đã hủy'].includes(s)) return 'cancelled';
+  return s || 'reserved';
+}
+
+function bedIdentity(row = {}) {
+  return `${String(row.room_id || '')}:${String(row.bed_code || '')}`;
+}
+
+function removeBedFromList(beds = [], roomId, bedCode) {
+  const target = `${String(roomId || '')}:${String(bedCode || '')}`;
+  return (beds || []).filter(bed => `${String(bed.room_id || '')}:${String(bed.bed_code || '')}` !== target);
+}
+
+function personDateRange(person = {}) {
+  const start = dateOnly(person.checkin_at || person.checked_in_at || person.actual_check_in || person.created_at) || '1900-01-01';
+  const end = dateOnly(person.checkout_at || person.checked_out_at || person.actual_check_out || person.expected_checkout_date) || '9999-12-31';
+  return { start, end };
+}
+
+function checkedInPersonOverlaps(person, start, end) {
+  if (canonicalOperationalStatus(person.status) !== 'checked_in') return false;
+  const range = personDateRange(person);
+  return overlaps(start, end, range.start, range.end);
+}
+
+async function updateBedInventory(db, propertyId, person) {
+  if (!person?.room_id || person?.bed_code === undefined || person?.bed_code === null) return;
+  const status = canonicalOperationalStatus(person.status) === 'checked_in' ? 'occupied' : 'available';
+  try {
+    await db
+      .from('beds')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('property_id', propertyId)
+      .eq('room_id', person.room_id)
+      .eq('bed_code', String(person.bed_code));
+  } catch {
+    // Beds inventory is supportive. Do not break check-in/out when beds table is missing in older deployments.
+  }
+}
+
+async function syncBookingAfterPersonChange(req, db, personRow) {
+  if (!personRow?.booking_id) return null;
+  const directDb = adminSupabase || db;
+  const now = new Date().toISOString();
+  const propertyId = req.propertyId || personRow.property_id || 'postova-3';
+
+  const { data: booking, error: bookingError } = await directDb
+    .from('bookings')
+    .select('*')
+    .eq('id', personRow.booking_id)
+    .maybeSingle();
+  if (bookingError) throw bookingError;
+  if (!booking) return null;
+
+  const { data: people, error: peopleError } = await directDb
+    .from('checkin_persons')
+    .select('*')
+    .eq('booking_id', booking.id)
+    .eq('property_id', propertyId);
+  if (peopleError) throw peopleError;
+
+  const activePeople = (people || []).filter(p => canonicalOperationalStatus(p.status) === 'checked_in');
+  const checkedOutPeople = (people || []).filter(p => canonicalOperationalStatus(p.status) === 'checked_out');
+  const personStatus = canonicalOperationalStatus(personRow.status);
+
+  let nextReservedBeds = normalizeBeds(booking);
+  // Once a person checks in, the bed is no longer "reserved"; it is occupied.
+  // Once that person checks out, the bed becomes free, not reserved again.
+  if ((personStatus === 'checked_in' || personStatus === 'checked_out') && personRow.room_id && personRow.bed_code !== undefined) {
+    nextReservedBeds = removeBedFromList(nextReservedBeds, personRow.room_id, personRow.bed_code);
+  }
+
+  let nextStatus = booking.status || 'Potvrdená';
+  const update = {
+    reserved_beds: nextReservedBeds,
+    updated_at: now
+  };
+
+  if (activePeople.length > 0) {
+    nextStatus = 'Check-in';
+    update.status = nextStatus;
+    update.actual_check_in = booking.actual_check_in || activePeople
+      .map(p => p.checkin_at || p.checked_in_at || p.actual_check_in)
+      .filter(Boolean)
+      .sort()[0] || now;
+    update.actual_check_out = null;
+  } else if (nextReservedBeds.length > 0 && personStatus !== 'checked_out') {
+    nextStatus = 'Potvrdená';
+    update.status = nextStatus;
+  } else if (personStatus === 'checked_out' || checkedOutPeople.length > 0) {
+    nextStatus = 'Ukončená';
+    update.status = nextStatus;
+    update.actual_check_out = personRow.checkout_at || personRow.checked_out_at || personRow.actual_check_out || now;
+    update.reserved_beds = [];
+  } else if (nextReservedBeds.length === 0) {
+    // Fully checked-in group with no remaining reserved beds keeps Check-in state
+    // when active people exist; otherwise leave the old state.
+    update.status = nextStatus;
+  }
+
+  const { data: savedBooking, error: updateError } = await directDb
+    .from('bookings')
+    .update(update)
+    .eq('id', booking.id)
+    .select('*')
+    .maybeSingle();
+  if (updateError) throw updateError;
+
+  await updateBedInventory(directDb, propertyId, personRow);
+  await writeAudit(req, 'bookings', 'sync_after_person_state', booking.id, booking, savedBooking || { ...booking, ...update });
+  return savedBooking || { ...booking, ...update };
+}
+
 function looksLikeUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
 }
 
 function cleanPayload(table, payload) {
   const out = { ...payload };
-  const nullableDates = ['due_date','paid_date','check_in_date','check_out_date','actual_check_in','actual_check_out','checkin_at','checkout_at','expected_checkout_date','date_of_birth','issue_date','expiry_date'];
+  const nullableDates = ['due_date','paid_date','check_in_date','check_out_date','actual_check_in','actual_check_out','checkin_at','checkout_at','checked_out_at','expected_checkout_date','date_of_birth','issue_date','expiry_date'];
   nullableDates.forEach(k => { if (out[k] === '') out[k] = null; });
   ['company_id','booking_id','room_id','guest_id','person_id'].forEach(k => { if (out[k] === '') out[k] = null; });
   if (table === 'documents') {
@@ -526,6 +644,8 @@ function cleanPayload(table, payload) {
     }
   }
   if (table === 'bookings') {
+    // Bookings table uses actual_check_out; checked_out_at belongs to checkin_persons.
+    delete out.checked_out_at;
     if (out.check_in_date && !out.check_in) out.check_in = out.check_in_date;
     if (out.check_out_date && !out.check_out) out.check_out = out.check_out_date;
     if (out.email && !out.guest_email) out.guest_email = out.email;
@@ -547,6 +667,9 @@ function cleanPayload(table, payload) {
     if (out.birth_date && !out.date_of_birth) out.date_of_birth = out.birth_date;
     if (out.checked_in_at && !out.checkin_at) out.checkin_at = out.checked_in_at;
     if (out.checkin_at && !out.checked_in_at) out.checked_in_at = out.checkin_at;
+    if (out.checked_out_at && !out.checkout_at) out.checkout_at = out.checked_out_at;
+    if (out.checkout_at && !out.checked_out_at) out.checked_out_at = out.checkout_at;
+    if (out.actual_check_out && !out.checked_out_at) out.checked_out_at = out.actual_check_out;
     if (!out.full_name) {
       out.full_name = `${out.first_name || ''} ${out.last_name || ''}`.trim() || null;
     }
@@ -580,7 +703,7 @@ function stripTransientFields(table, payload) {
   return out;
 }
 
-app.get('/api', (_req, res) => res.json({ success: true, name: 'StayHub API v5.2 Reservation Engine Refactor' }));
+app.get('/api', (_req, res) => res.json({ success: true, name: 'StayHub API v5.3.2 Reservation Engine Fix' }));
 app.get('/api/health', (_req, res) => res.json({
   success: true,
   status: 'OK',
@@ -643,15 +766,24 @@ app.get('/api/availability', async (req, res) => {
   if (!check_in_date || !check_out_date) return res.status(400).json({ success: false, error: 'Chýba termín.' });
   try {
     const db = req.supabase;
-    const [{ data: rooms, error: re }, { data: bookings, error: be }] = await Promise.all([
+    const [{ data: rooms, error: re }, { data: bookings, error: be }, { data: people, error: pe }] = await Promise.all([
       scopedQuery(req, 'rooms', db.from('rooms').select('*')).order('room_number', { ascending: true }),
-      scopedQuery(req, 'bookings', db.from('bookings').select('*'))
+      scopedQuery(req, 'bookings', db.from('bookings').select('*')),
+      scopedQuery(req, 'checkin_persons', db.from('checkin_persons').select('*'))
     ]);
-    if (re) throw re; if (be) throw be;
+    if (re) throw re; if (be) throw be; if (pe) throw pe;
     const used = new Set();
+
+    // 1) Remaining reserved beds block the period.
     (bookings || [])
-      .filter(b => String(b.id) !== String(exclude_id || '') && !cancelled.has(b.status) && overlaps(check_in_date, check_out_date, b.check_in_date, b.check_out_date))
+      .filter(b => String(b.id) !== String(exclude_id || '') && !cancelled.has(b.status) && canonicalOperationalStatus(b.status) !== 'checked_out' && overlaps(check_in_date, check_out_date, b.check_in_date, b.check_out_date))
       .forEach(b => normalizeBeds(b).forEach(x => used.add(`${x.room_id}:${x.bed_code}`)));
+
+    // 2) Physically checked-in guests also block their bed until checkout/expected checkout.
+    (people || [])
+      .filter(p => String(p.booking_id || '') !== String(exclude_id || '') && checkedInPersonOverlaps(p, check_in_date, check_out_date))
+      .forEach(p => used.add(`${p.room_id}:${p.bed_code}`));
+
     const availability = (rooms || []).map(r => {
       const cap = Number(r.capacity || 3);
       const beds = Array.from({ length: cap }, (_, i) => String(i + 1)).map(code => ({
@@ -895,12 +1027,29 @@ app.get('/api/:table', async (req, res) => {
 async function validateBookingBeds(req, db, payload, excludeId) {
   const beds = normalizeBeds(payload);
   if (!payload.check_in_date || !payload.check_out_date || beds.length === 0) return null;
-  const { data, error } = await scopedQuery(req, 'bookings', db.from('bookings').select('*'));
-  if (error) throw error;
+  const [{ data: bookings, error: bookingError }, { data: people, error: peopleError }] = await Promise.all([
+    scopedQuery(req, 'bookings', db.from('bookings').select('*')),
+    scopedQuery(req, 'checkin_persons', db.from('checkin_persons').select('*'))
+  ]);
+  if (bookingError) throw bookingError;
+  if (peopleError) throw peopleError;
   const wanted = new Set(beds.map(b => `${b.room_id}:${b.bed_code}`));
-  const conflicts = (data || [])
-    .filter(b => String(b.id) !== String(excludeId || '') && !cancelled.has(b.status) && overlaps(payload.check_in_date, payload.check_out_date, b.check_in_date, b.check_out_date))
-    .filter(b => normalizeBeds(b).some(x => wanted.has(`${x.room_id}:${x.bed_code}`)));
+  const conflicts = [];
+
+  (bookings || [])
+    .filter(b => String(b.id) !== String(excludeId || '') && !cancelled.has(b.status) && canonicalOperationalStatus(b.status) !== 'checked_out' && overlaps(payload.check_in_date, payload.check_out_date, b.check_in_date, b.check_out_date))
+    .forEach(b => {
+      normalizeBeds(b).forEach(x => {
+        if (wanted.has(`${x.room_id}:${x.bed_code}`)) conflicts.push({ type: 'reserved', booking: b, room_id: x.room_id, bed_code: x.bed_code });
+      });
+    });
+
+  (people || [])
+    .filter(p => String(p.booking_id || '') !== String(excludeId || '') && checkedInPersonOverlaps(p, payload.check_in_date, payload.check_out_date))
+    .forEach(p => {
+      if (wanted.has(`${p.room_id}:${p.bed_code}`)) conflicts.push({ type: 'occupied', person: p, room_id: p.room_id, bed_code: p.bed_code });
+    });
+
   return conflicts.length ? conflicts : null;
 }
 
@@ -1059,8 +1208,9 @@ app.post('/api/:table', async (req, res) => {
           .select('*')
           .single();
         if (error) throw error;
+        const syncedBooking = await syncBookingAfterPersonChange(req, db, data);
         await writeAudit(req, table, 'deduplicate_update', data?.id, validation.existing, data);
-        return res.status(200).json({ success: true, data, deduplicated: true });
+        return res.status(200).json({ success: true, data, booking: syncedBooking, deduplicated: true });
       }
     }
     payload = stripTransientFields(table, payload);
@@ -1080,8 +1230,10 @@ app.post('/api/:table', async (req, res) => {
     if (error) throw error;
     const data = Array.isArray(insertedRows) ? insertedRows[0] : insertedRows;
     if (!data) throw new Error('Zaznam sa vytvoril bez navratovych dat. Skontroluj Supabase RLS/select policy pre tuto tabulku.');
+    let syncedBooking = null;
+    if (table === 'checkin_persons') syncedBooking = await syncBookingAfterPersonChange(req, db, data);
     await writeAudit(req, table, 'create', data?.id, null, data);
-    res.status(201).json({ success: true, data });
+    res.status(201).json({ success: true, data, booking: syncedBooking });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
@@ -1196,19 +1348,24 @@ app.put('/api/:table/:id', async (req, res) => {
       }
       if (!data) {
         data = { ...(oldData || {}), ...payload, id: req.params.id };
+        const syncedBooking = table === 'checkin_persons' ? await syncBookingAfterPersonChange(req, db, data) : null;
         await writeAudit(req, table, 'update_fallback', req.params.id, oldData, data);
-        return res.json({ success: true, data, warning: 'Update nevratil data zo Supabase, použitý fallback.' });
+        return res.json({ success: true, data, booking: syncedBooking, warning: 'Update nevratil data zo Supabase, použitý fallback.' });
       }
     }
 
     if (!data) {
       const fallbackData = oldData ? { ...oldData, ...payload, id: req.params.id } : null;
       if (!fallbackData) throw new Error('Zaznam sa nepodarilo aktualizovat alebo vratit zo Supabase.');
+      let syncedBooking = null;
+      if (table === 'checkin_persons') syncedBooking = await syncBookingAfterPersonChange(req, db, fallbackData);
       await writeAudit(req, table, 'update', req.params.id, oldData, fallbackData);
-      return res.json({ success: true, data: fallbackData, warning: 'Update nevratil data zo Supabase.' });
+      return res.json({ success: true, data: fallbackData, booking: syncedBooking, warning: 'Update nevratil data zo Supabase.' });
     }
+    let syncedBooking = null;
+    if (table === 'checkin_persons') syncedBooking = await syncBookingAfterPersonChange(req, db, data);
     await writeAudit(req, table, 'update', req.params.id, oldData, data);
-    res.json({ success: true, data });
+    res.json({ success: true, data, booking: syncedBooking });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 

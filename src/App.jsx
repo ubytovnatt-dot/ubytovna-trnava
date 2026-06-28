@@ -491,7 +491,7 @@ function CheckIn({ bookings, companies, people, onRefresh }) {
   };
   const arrivals = activeBookings
     .map(b=>({ booking:b, stats:checkinStats(b) }))
-    .filter(x=>x.stats.capacity === 0 || x.stats.free > 0 || x.stats.count > 0)
+    .filter(x=>x.stats.capacity === 0 || x.stats.free > 0)
     .sort((a,b)=>String(a.booking.check_in_date||'').localeCompare(String(b.booking.check_in_date||'')));
 
   async function saveCheckout(row){
@@ -504,9 +504,6 @@ function CheckIn({ bookings, companies, people, onRefresh }) {
         checked_out_at:checkoutAt,
         actual_check_out:today()
       })});
-      if(row.booking_id && bookingHasNoActivePeopleAfterCheckout(people, row.booking_id, row.id)){
-        await api(`/api/bookings/${row.booking_id}`,{method:'PUT',body:JSON.stringify({status:'Ukončená',actual_check_out:today(),checked_out_at:checkoutAt})});
-      }
       setCheckoutPerson(null);
       setMsg('Check-out bol uložený a lôžko sa uvoľnilo.');
       onRefresh();
@@ -535,7 +532,7 @@ function CheckIn({ bookings, companies, people, onRefresh }) {
     </div>
 
     <section className="space-y-3">
-      <div className="flex items-center justify-between"><h2 className="text-xl font-black text-slate-950">⬆ Príchody / Check-in</h2><span className="text-sm font-bold text-slate-500">{arrivals.length} rezervácií</span></div>
+      <div className="flex items-center justify-between"><h2 className="text-xl font-black text-slate-950">⬆ Príchody / Check-in</h2><span className="text-sm font-bold text-slate-500">{arrivals.length} čaká na príchod</span></div>
       <Table heads={['Rezervácia','Firma/platiteľ','Termín','Lôžka','Ubytované','Voľné','Akcia']}>
         {arrivals.map(({booking:b, stats:st})=>{
           const canCheckIn = st.capacity > 0 && st.free > 0;
@@ -580,92 +577,121 @@ function CheckIn({ bookings, companies, people, onRefresh }) {
 function CheckInModal({ booking, people, onClose, onSaved }) {
   const beds=parseBeds(booking);
   const existingPeopleForBooking = (people || []).filter(p => String(p.booking_id) === String(booking.id) && p.status === 'checked_in');
-  const bookingCapacity = Math.max(
-    beds.length,
-    Number(booking.requested_beds || 0),
-    Number(booking.beds_count || 0),
-    existingPeopleForBooking.length,
-    1
-  );
+  const bookingCapacity = Math.max(beds.length, Number(booking.requested_beds || 0), Number(booking.beds_count || 0), existingPeopleForBooking.length, 1);
   const buildRows=()=>beds.map(b=>{
     const existing=people.find(p=>String(p.booking_id)===String(booking.id)&&String(p.room_id)===String(b.room_id)&&String(p.bed_code)===String(b.bed_code));
     return existing||{
-      booking_id:booking.id,
-      company_id:booking.company_id||null,
-      company_name:booking.company_name||null,
-      room_id:b.room_id,
-      room_label:b.room_label,
-      room_number:b.room_number,
-      bed_code:b.bed_code,
-      first_name:'',
-      last_name:'',
-      phone:'',
-      passport_no:'',
-      nationality:'Vietnam',
-      date_of_birth:'',
-      checkin_at:new Date().toISOString(),
-      expected_checkout_date:booking.check_out_date,
-      status:'checked_in',
-      keys_issued:'Áno',
-      room_condition_checkin:'OK'
+      booking_id:booking.id, company_id:booking.company_id||null, company_name:booking.company_name||null,
+      room_id:b.room_id, room_label:b.room_label, room_number:b.room_number, bed_code:b.bed_code,
+      first_name:'', last_name:'', phone:'', passport_no:'', document_type:'Pas', nationality:'Vietnam', date_of_birth:'', issue_date:'', expiry_date:'',
+      checkin_at:new Date().toISOString(), expected_checkout_date:booking.check_out_date, status:'reserved',
+      keys_issued:'Áno', room_condition_checkin:'OK', document_storage_path:'', document_file_url:'', document_file_name:'', document_mime_type:'', document_size_bytes:'', ocr_status:'not_started', ocr_json:null
     };
   });
   const [rows,setRows]=useState(buildRows);
+  const [selected,setSelected]=useState(0);
   const [error,setError]=useState('');
+  const [busy,setBusy]=useState('');
   const update=(i,k,v)=>setRows(r=>r.map((x,idx)=>idx===i?{...x,[k]:v}:x));
-  const fillDemoName=(i)=>update(i,'first_name',`Osoba ${i+1}`);
+  const updateMany=(i,obj)=>setRows(r=>r.map((x,idx)=>idx===i?{...x,...obj}:x));
+  const splitFullName=(name='')=>{const parts=String(name).trim().split(/\s+/).filter(Boolean); return {first_name:parts.slice(0,-1).join(' ')||parts[0]||'', last_name:parts.length>1?parts.slice(-1).join(''):''};};
+  async function uploadDoc(i,file){
+    if(!file) return;
+    setError('');
+    if(file.size > 8 * 1024 * 1024) return setError('Súbor je príliš veľký. Maximum je 8 MB.');
+    setBusy(`upload-${i}`);
+    try{
+      const base64=await readFileAsBase64(file);
+      const row=rows[i];
+      const uploaded=await api('/api/documents/upload',{method:'POST',body:JSON.stringify({filename:file.name,mime_type:file.type,base64,document_type:row.document_type,company_id:booking.company_id||row.company_id})});
+      updateMany(i,{_ocr_base64:base64,document_storage_path:uploaded.storage_path||'',document_file_url:uploaded.file_url||'',document_file_name:file.name,document_mime_type:file.type,document_size_bytes:file.size,ocr_status:'uploaded'});
+    }catch(e){setError(e.message||'Upload dokumentu zlyhal.');}
+    finally{setBusy('');}
+  }
+  async function runOcr(i){
+    const row=rows[i];
+    if(!row._ocr_base64 && !row.document_file_url) return setError('Najprv nahraj alebo odfoť doklad.');
+    setError(''); setBusy(`ocr-${i}`);
+    try{
+      const result=await api('/api/documents/ocr',{method:'POST',body:JSON.stringify({base64:row._ocr_base64,file_url:row.document_file_url,mime_type:row.document_mime_type,document_type:row.document_type})});
+      const names=result.full_name?splitFullName(result.full_name):{};
+      updateMany(i,{...names,passport_no:result.document_number||row.passport_no,nationality:result.nationality||row.nationality,issue_date:result.issue_date||row.issue_date,expiry_date:result.expiry_date||row.expiry_date,ocr_status:'completed',ocr_json:result,ocr_note:result.summary||'OCR spracované'});
+    }catch(e){update(i,'ocr_status','failed'); setError(e.message||'AI OCR zlyhalo.');}
+    finally{setBusy('');}
+  }
   async function save(){
     try{
       setError('');
-      const filledRows = rows.filter(row => String(row.first_name||'').trim() || String(row.last_name||'').trim());
-      if(filledRows.length === 0) return setError('Doplň aspoň jedno meno osoby pre check-in.');
+      const filledRows = rows.filter(row => String(row.first_name||'').trim() || String(row.last_name||'').trim() || String(row.passport_no||'').trim());
+      if(filledRows.length === 0) return setError('Vyber osobu a doplň údaje alebo spusti AI OCR.');
       if(filledRows.length > bookingCapacity) return setError(`Počet osôb (${filledRows.length}) prekračuje kapacitu rezervácie (${bookingCapacity}).`);
       const uniqueBeds = new Set(filledRows.map(row => `${String(row.room_id)}:${String(row.bed_code)}`));
       if(uniqueBeds.size !== filledRows.length) return setError('Jedno lôžko je použité viackrát. Skontroluj check-in osoby.');
-      let saved=0;
       for(const row of filledRows){
-        const payload={...row,status:'checked_in',checkin_at:row.checkin_at||new Date().toISOString(),expected_checkout_date:row.expected_checkout_date||booking.check_out_date,booking_capacity:bookingCapacity,requested_beds:booking.requested_beds||bookingCapacity,beds_count:booking.beds_count||bookingCapacity,reserved_beds:beds};
-        if(row.id) await api(`/api/checkin-persons/${row.id}`,{method:'PUT',body:JSON.stringify(payload)});
-        else await api('/api/checkin-persons',{method:'POST',body:JSON.stringify(payload)});
-        saved++;
+        const personPayload={...row,status:'checked_in',checkin_at:row.checkin_at||new Date().toISOString(),checked_in_at:row.checked_in_at||new Date().toISOString(),actual_check_in:row.actual_check_in||new Date().toISOString(),expected_checkout_date:row.expected_checkout_date||booking.check_out_date,booking_capacity:bookingCapacity,requested_beds:booking.requested_beds||bookingCapacity,beds_count:booking.beds_count||bookingCapacity,reserved_beds:beds,document_number:row.passport_no,document_storage_path:row.document_storage_path||null,ocr_status:row.ocr_status||'not_started',ocr_json:row.ocr_json||null};
+        delete personPayload._ocr_base64; delete personPayload.document_file_url; delete personPayload.document_file_name; delete personPayload.document_mime_type; delete personPayload.document_size_bytes; delete personPayload.ocr_note;
+        const savedPerson = row.id ? await api(`/api/checkin-persons/${row.id}`,{method:'PUT',body:JSON.stringify(personPayload)}) : await api('/api/checkin-persons',{method:'POST',body:JSON.stringify(personPayload)});
+        if(row.document_storage_path){
+          const personId=savedPerson?.id || row.id || null;
+          await api('/api/documents',{method:'POST',body:JSON.stringify({booking_id:booking.id,person_id:personId,company_id:booking.company_id||row.company_id||null,company_name:booking.company_name||row.company_name||null,person_name:`${row.first_name||''} ${row.last_name||''}`.trim(),document_type:row.document_type,document_type_normalized:row.document_type==='Občiansky preukaz'?'id_card':'passport',document_number:row.passport_no||row.document_number||null,issue_date:row.issue_date||null,expiry_date:row.expiry_date||null,storage_path:row.document_storage_path,file_url:row.document_file_url||null,file_name:row.document_file_name||null,mime_type:row.document_mime_type||null,size_bytes:row.document_size_bytes||null,ocr_status:row.ocr_status||'completed',ocr_json:row.ocr_json||null,note:row.ocr_note||'Doklad uložený pri check-ine'})});
+        }
       }
-      // Status rezervácie meníme iba minimálnym payloadom.
-      // Neposielame celý objekt booking, aby Supabase neodmietol read-only / vypočítané polia.
-      await api(`/api/bookings/${booking.id}`,{method:'PUT',body:JSON.stringify({status:'Check-in'})});
       onSaved();
-    }catch(e){
-      console.error('Check-in save error:', e);
-      setError(e.message || 'Check-in sa nepodarilo uložiť.');
-    }
+    }catch(e){ console.error('Check-in save error:', e); setError(e.message || 'Check-in sa nepodarilo uložiť.'); }
   }
-  const filledCount = rows.filter(row => String(row.first_name||'').trim() || String(row.last_name||'').trim()).length;
+  const filledCount = rows.filter(row => String(row.first_name||'').trim() || String(row.last_name||'').trim() || String(row.passport_no||'').trim()).length;
   const freeCount = Math.max(0, bookingCapacity - filledCount);
-  const isFull = bookingCapacity > 0 && freeCount === 0;
+  const current = rows[selected] || rows[0];
   return <Modal title={`Check-in: ${booking.booking_code}`} onClose={onClose} onSave={save} wide>
     <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4">
       <div className="font-black text-slate-900">{booking.company_name||booking.guest_name||booking.contact_person}</div>
       <div className="text-sm text-slate-500 mt-1">{booking.check_in_date} → {booking.check_out_date} · {bookingCapacity} lôžok</div>
-      <div className={`mt-3 rounded-xl p-3 text-sm font-bold ${isFull ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-blue-50 text-blue-800 border border-blue-200'}`}>
-        Kapacita: {bookingCapacity} · Vyplnené osoby: {filledCount}/{bookingCapacity} · Voľné miesta: {freeCount}{isFull ? ' · Kapacita naplnená' : ''}
-      </div>
+      <div className="mt-3 rounded-xl p-3 text-sm font-bold bg-blue-50 text-blue-800 border border-blue-200">Vyber osobu/lôžko → Pas alebo Občiansky preukaz → nahrať/fotiť → AI OCR → Potvrdiť check-in. Vyplnené: {filledCount}/{bookingCapacity} · Voľné: {freeCount}</div>
     </div>
     {error && <div className="rounded-2xl bg-red-50 border border-red-200 p-4 text-red-700 font-bold">{error}</div>}
-    {rows.map((r,i)=><div key={`${r.room_id}-${r.bed_code}`} className="border rounded-2xl p-4 space-y-3 bg-white">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="font-black text-lg">{bedLabel(r)}</h3>
-        {!r.first_name && !r.last_name && <button type="button" onClick={()=>fillDemoName(i)} className="text-xs px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold">Dočasné meno</button>}
+    <div className="grid lg:grid-cols-[260px_1fr] gap-4">
+      <div className="rounded-3xl border border-slate-100 bg-white p-3 space-y-2">
+        <div className="px-2 py-2 text-xs font-black text-slate-500 uppercase">Vyber osobu / lôžko</div>
+        {rows.map((r,i)=><button type="button" key={`${r.room_id}-${r.bed_code}`} onClick={()=>setSelected(i)} className={`w-full text-left rounded-2xl px-4 py-3 border ${selected===i?'bg-slate-950 text-white border-slate-950':'bg-white hover:bg-slate-50 border-slate-100'}`}>
+          <div className="font-black">{bedLabel(r)}</div>
+          <div className={`text-xs ${selected===i?'text-slate-200':'text-slate-500'}`}>{`${r.first_name||''} ${r.last_name||''}`.trim() || (r.ocr_status==='completed'?'OCR hotové':'Čaká na údaje')}</div>
+        </button>)}
       </div>
-      <Grid>
-        <Field label="Meno" value={r.first_name} onChange={v=>update(i,'first_name',v)}/>
-        <Field label="Priezvisko" value={r.last_name} onChange={v=>update(i,'last_name',v)}/>
-        <Field label="Telefón" value={r.phone} onChange={v=>update(i,'phone',v)}/>
-        <Field label="Pas / OP" value={r.passport_no} onChange={v=>update(i,'passport_no',v)}/>
-        <Field label="Národnosť" value={r.nationality} onChange={v=>update(i,'nationality',v)}/>
-        <Field label="Dátum narodenia" type="date" value={r.date_of_birth} onChange={v=>update(i,'date_of_birth',v)}/>
-        <Select label="Kľúče vydané" value={r.keys_issued||'Áno'} onChange={v=>update(i,'keys_issued',v)} opts={[["Áno","Áno"],["Nie","Nie"]]}/>
-        <Select label="Stav izby" value={r.room_condition_checkin||'OK'} onChange={v=>update(i,'room_condition_checkin',v)} opts={[["OK","OK"],["Poškodené","Poškodené"],["Znečistené","Znečistené"]]}/>
-      </Grid>
-    </div>)}
+      {current && <div className="rounded-3xl border border-slate-100 bg-white p-5 space-y-5">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div><div className="text-xs font-black text-slate-500 uppercase">Check-in osoba</div><h3 className="font-black text-2xl">{bedLabel(current)}</h3></div>
+          <div className="inline-flex rounded-2xl bg-slate-100 p-1">
+            {['Pas','Občiansky preukaz'].map(t=><button type="button" key={t} onClick={()=>update(selected,'document_type',t)} className={`px-4 py-2 rounded-xl text-sm font-black ${current.document_type===t?'bg-white shadow text-slate-950':'text-slate-500'}`}>{t}</button>)}
+          </div>
+        </div>
+        <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div><div className="font-black text-slate-900">Doklad totožnosti</div><div className="text-sm text-slate-500">Nahraj fotku/PDF z počítača alebo odfoť mobilom. Potom klikni na AI OCR.</div></div>
+            <label className="btn-primary-soft cursor-pointer justify-center">
+              {busy===`upload-${selected}`?'Nahrávam…':'Nahrať / odfotiť'}
+              <input type="file" className="hidden" accept=".pdf,image/*" onChange={e=>uploadDoc(selected,e.target.files?.[0])}/>
+            </label>
+          </div>
+          {(current.document_file_name||current.document_storage_path) && <div className="mt-4 rounded-2xl bg-white border p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div><div className="font-black">{current.document_file_name||'Nahratý doklad'}</div><div className="text-xs text-slate-500 break-all">{current.document_storage_path}</div></div>
+            <div className="flex gap-2">{current.document_file_url && <a className="btn-muted" href={current.document_file_url} target="_blank">Náhľad</a>}<button type="button" className="btn-primary-soft" disabled={busy===`ocr-${selected}`} onClick={()=>runOcr(selected)}>{busy===`ocr-${selected}`?'AI číta…':'AI OCR'}</button></div>
+          </div>}
+          {current.ocr_status==='completed' && <div className="mt-3 text-sm font-bold text-green-700">OCR spracované. Skontroluj údaje pred potvrdením.</div>}
+        </div>
+        <Grid>
+          <Field label="Meno" value={current.first_name} onChange={v=>update(selected,'first_name',v)}/>
+          <Field label="Priezvisko" value={current.last_name} onChange={v=>update(selected,'last_name',v)}/>
+          <Field label="Telefón" value={current.phone} onChange={v=>update(selected,'phone',v)}/>
+          <Field label="Číslo dokladu" value={current.passport_no} onChange={v=>update(selected,'passport_no',v)}/>
+          <Field label="Národnosť" value={current.nationality} onChange={v=>update(selected,'nationality',v)}/>
+          <Field label="Dátum narodenia" type="date" value={current.date_of_birth} onChange={v=>update(selected,'date_of_birth',v)}/>
+          <Field label="Vydané" type="date" value={current.issue_date} onChange={v=>update(selected,'issue_date',v)}/>
+          <Field label="Platné do" type="date" value={current.expiry_date} onChange={v=>update(selected,'expiry_date',v)}/>
+          <Select label="Kľúče vydané" value={current.keys_issued||'Áno'} onChange={v=>update(selected,'keys_issued',v)} opts={[["Áno","Áno"],["Nie","Nie"]]}/>
+          <Select label="Stav izby" value={current.room_condition_checkin||'OK'} onChange={v=>update(selected,'room_condition_checkin',v)} opts={[["OK","OK"],["Poškodené","Poškodené"],["Znečistené","Znečistené"]]}/>
+        </Grid>
+      </div>}
+    </div>
     {rows.length===0 && <div className="rounded-2xl bg-red-50 border border-red-200 p-4 text-red-700">Táto rezervácia nemá pridelené lôžka. Najprv v rezervácii prideľ lôžka.</div>}
   </Modal>;
 }
@@ -677,9 +703,6 @@ function CheckOut({ people, onRefresh }) {
     try{
       const checkoutAt = new Date().toISOString();
       await api(`/api/checkin-persons/${row.id}`,{method:'PUT',body:JSON.stringify({...row,status:'checked_out',checkout_at:checkoutAt,actual_check_out:today()})});
-      if(row.booking_id && bookingHasNoActivePeopleAfterCheckout(people, row.booking_id, row.id)){
-        await api(`/api/bookings/${row.booking_id}`,{method:'PUT',body:JSON.stringify({status:'Ukončená',actual_check_out:today(),checked_out_at:checkoutAt})});
-      }
       setPerson(null);
       onRefresh();
     }catch(e){alert(e.message)}
