@@ -22,7 +22,7 @@ const USER_ROLES = {
   admin: {
     label: 'Admin',
     description: 'Plný prístup ku všetkým modulom, nastaveniam, mazaniu a reportom.',
-    tabs: ['dashboard','bookings','checkin','settings'],
+    tabs: ['dashboard','bookings','checkin','payments','settings'],
     canCreate: true,
     canEdit: true,
     canDelete: true,
@@ -35,7 +35,7 @@ const USER_ROLES = {
   manager: {
     label: 'Správca',
     description: 'Prevádzkový manažér: rezervácie, firmy, platby, check-in/out a reporty bez systémových nastavení.',
-    tabs: ['dashboard','bookings','checkin','settings'],
+    tabs: ['dashboard','bookings','checkin','payments','settings'],
     canCreate: true,
     canEdit: true,
     canDelete: false,
@@ -48,7 +48,7 @@ const USER_ROLES = {
   reception: {
     label: 'Recepcia',
     description: 'Denná prevádzka: rezervácie, check-in, check-out a základné platby bez mazania.',
-    tabs: ['dashboard','bookings','checkin','settings'],
+    tabs: ['dashboard','bookings','checkin','payments','settings'],
     canCreate: true,
     canEdit: true,
     canDelete: false,
@@ -61,7 +61,7 @@ const USER_ROLES = {
   accounting: {
     label: 'Účtovník',
     description: 'Prístup k platbám, reportom a základnému prehľadu bez prevádzkových zásahov.',
-    tabs: ['dashboard','bookings','settings'],
+    tabs: ['dashboard','bookings','payments','settings'],
     canCreate: true,
     canEdit: true,
     canDelete: false,
@@ -261,7 +261,7 @@ export default function UbytovnaApp() {
   useEffect(() => { if (logged && !canAccessTab(currentRole, activeTab)) setActiveTab(roleInfo.tabs[0] || 'dashboard'); }, [logged, currentRole, activeTab]);
   if (authLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white font-black">Načítavam StayHub...</div>;
   if (!logged) return <LoginScreen onLogin={loginWithPassword} setupReady={Boolean(supabaseAuth)} />;
-  return <div className="app-shell stayhub-v5 flex h-screen bg-slate-50 text-slate-900"><Sidebar open={sidebarOpen} active={activeTab} setActive={(tab)=>{ if (!canAccessTab(currentRole, tab)) return; setActiveTab(tab); if (typeof window !== 'undefined' && window.innerWidth < 1024) setSidebarOpen(false);}} onLogout={logout} property={selectedProperty} lang={lang} role={currentRole} /><button aria-label="Zatvoriť menu" className={`mobile-menu-overlay ${sidebarOpen ? 'is-open' : ''}`} onClick={() => setSidebarOpen(false)} /><div className="flex-1 overflow-auto page-scroll"><Header open={sidebarOpen} setOpen={setSidebarOpen} lang={lang} setLang={changeLang} properties={DEFAULT_PROPERTIES} propertyId={selectedPropertyId} setPropertyId={(id)=>{setSelectedPropertyId(id);localStorage.setItem('stayhub_property', id);}} role={currentRole} user={currentUser} />{error && <Banner type="error">Chyba: {error}</Banner>}{loading && <Banner>⏳ Načítavam dáta...</Banner>}<main className="v5-main p-5 md:p-8 max-w-[1480px] mx-auto">
+  return <div className="app-shell stayhub-v6 flex h-screen bg-slate-50 text-slate-900"><Sidebar open={sidebarOpen} active={activeTab} setActive={(tab)=>{ if (!canAccessTab(currentRole, tab)) return; setActiveTab(tab); if (typeof window !== 'undefined' && window.innerWidth < 1024) setSidebarOpen(false);}} onLogout={logout} property={selectedProperty} lang={lang} role={currentRole} /><button aria-label="Zatvoriť menu" className={`mobile-menu-overlay ${sidebarOpen ? 'is-open' : ''}`} onClick={() => setSidebarOpen(false)} /><div className="flex-1 overflow-auto page-scroll"><Header open={sidebarOpen} setOpen={setSidebarOpen} lang={lang} setLang={changeLang} properties={DEFAULT_PROPERTIES} propertyId={selectedPropertyId} setPropertyId={(id)=>{setSelectedPropertyId(id);localStorage.setItem('stayhub_property', id);}} role={currentRole} user={currentUser} />{error && <Banner type="error">Chyba: {error}</Banner>}{loading && <Banner>⏳ Načítavam dáta...</Banner>}<main className="v6-main p-5 md:p-8 max-w-[1480px] mx-auto">
     {activeTab === 'dashboard' && <Dashboard stats={stats} bookings={bookings} payments={payments} people={people} rooms={rooms} lang={lang} />}
     {activeTab === 'rooms' && <Rooms rooms={rooms} bookings={bookings} people={people} onRefresh={fetchData} role={currentRole} />}
     {activeTab === 'bookings' && <Bookings bookings={bookings} rooms={rooms} companies={companies} payments={payments} onRefresh={fetchData} role={currentRole} />}
@@ -273,7 +273,7 @@ export default function UbytovnaApp() {
     {activeTab === 'documents' && <Documents documents={documents} people={people} companies={companies} onRefresh={fetchData} role={currentRole} />}
     {activeTab === 'reports' && <Reports rooms={rooms} bookings={bookings} payments={payments} people={people} companies={companies} documents={documents} />}
     {activeTab === 'settings' && <SettingsTab role={currentRole} />}
-  </main></div></div>;
+  </main></div><BottomNav active={activeTab} setActive={(tab)=>{ if (!canAccessTab(currentRole, tab)) return; setActiveTab(tab); }} role={currentRole} /></div>;
 }
 
 function BrandMark({ compact = false, dark = false }) {
@@ -320,6 +320,7 @@ function Sidebar({ open, active, setActive, onLogout, property, lang, role }) {
     ['dashboard','Dnes',Home],
     ['bookings','Rezervácie',Calendar],
     ['checkin','Check-in / Check-out',DoorOpen],
+    ['payments','Platby',CreditCard],
     ['settings','Nastavenia',Settings]
   ];
   const items=allItems.filter(([id])=>canAccessTab(role,id));
@@ -366,6 +367,28 @@ function Sidebar({ open, active, setActive, onLogout, property, lang, role }) {
       </button>
     </div>
   </aside>;
+}
+
+
+function BottomNav({ active, setActive, role }) {
+  const primary = [
+    ['dashboard','Dnes',Home],
+    ['bookings','Rezervácie',Calendar],
+    ['checkin','Check-in',Plus],
+    ['payments','Platby',CreditCard],
+    ['settings','Viac',Menu]
+  ].filter(([id]) => canAccessTab(role, id));
+
+  return <nav className="v6-bottom-nav" aria-label="Hlavná navigácia">
+    {primary.map(([id,label,Icon]) => {
+      const isActive = active === id;
+      const isMain = id === 'checkin';
+      return <button key={id} onClick={() => setActive(id)} className={`v6-bottom-item ${isActive ? 'is-active' : ''} ${isMain ? 'is-main' : ''}`}>
+        <span className="v6-bottom-icon"><Icon size={isMain ? 24 : 21}/></span>
+        <span>{label}</span>
+      </button>;
+    })}
+  </nav>;
 }
 
 function Header({ open, setOpen, lang, setLang, properties, propertyId, setPropertyId, role, user }) {

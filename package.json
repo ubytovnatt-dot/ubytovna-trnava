@@ -1,6 +1,6 @@
 {
-  "name": "stayhub-v5-ocr-mobile-fix",
-  "version": "5.4.1",
+  "name": "stayhub-v6-apple-ui-foundation",
+  "version": "6.0.0-alpha.1",
   "private": true,
   "type": "module",
   "scripts": {
