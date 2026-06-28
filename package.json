@@ -1,6 +1,6 @@
 {
-  "name": "stayhub-v5-database-stabilization",
-  "version": "5.2.1",
+  "name": "stayhub-v5-smart-checkin-checkout",
+  "version": "5.3.0",
   "private": true,
   "type": "module",
   "scripts": {

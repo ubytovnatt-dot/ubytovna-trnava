@@ -472,46 +472,108 @@ function BookingModal({ booking, rooms, companies, onClose, onSave }) { const de
 
 function CheckIn({ bookings, companies, people, onRefresh }) {
   const [booking,setBooking]=useState(null);
+  const [checkoutPerson,setCheckoutPerson]=useState(null);
+  const [msg,setMsg]=useState(null);
   const activeBookings=bookings.filter(b=>!COMPLETED_STATUSES.has(b.status)&&!CANCELLED_STATUSES.has(b.status));
+  const checkedInPeople=(people||[]).filter(p=>p.status==='checked_in');
+  const todayDate=today();
+  const expectedDate=(p)=>String(p.expected_checkout_date||p.checkout_at||p.actual_check_out||'').slice(0,10);
+  const dueOutToday=checkedInPeople.filter(p=>expectedDate(p)===todayDate);
+  const dueOutLater=checkedInPeople.filter(p=>expectedDate(p)!==todayDate);
   const checkinStats = (b) => {
     const beds = parseBeds(b);
     const allowedBeds = new Set(beds.map(x => `${String(x.room_id)}:${String(x.bed_code)}`));
     const active = people.filter(p => String(p.booking_id) === String(b.id) && p.status === 'checked_in');
-    const validActive = active.filter(p => allowedBeds.has(`${String(p.room_id)}:${String(p.bed_code)}`));
+    const validActive = active.filter(p => allowedBeds.size === 0 || allowedBeds.has(`${String(p.room_id)}:${String(p.bed_code)}`));
     const unique = new Set(validActive.map(p => `${String(p.room_id)}:${String(p.bed_code)}`));
-    return { beds, capacity: beds.length, rawCount: active.length, count: unique.size, free: Math.max(0, beds.length - unique.size), over: active.length > beds.length || unique.size > beds.length };
+    const capacity = Math.max(beds.length, Number(b.requested_beds || 0));
+    return { beds, capacity, rawCount: active.length, count: unique.size, free: Math.max(0, capacity - unique.size), over: active.length > capacity || unique.size > capacity };
   };
+  const arrivals = activeBookings
+    .map(b=>({ booking:b, stats:checkinStats(b) }))
+    .filter(x=>x.stats.capacity === 0 || x.stats.free > 0 || x.stats.count > 0)
+    .sort((a,b)=>String(a.booking.check_in_date||'').localeCompare(String(b.booking.check_in_date||'')));
+
+  async function saveCheckout(row){
+    try{
+      const checkoutAt = new Date().toISOString();
+      await api(`/api/checkin-persons/${row.id}`,{method:'PUT',body:JSON.stringify({
+        ...row,
+        status:'checked_out',
+        checkout_at:checkoutAt,
+        checked_out_at:checkoutAt,
+        actual_check_out:today()
+      })});
+      if(row.booking_id && bookingHasNoActivePeopleAfterCheckout(people, row.booking_id, row.id)){
+        await api(`/api/bookings/${row.booking_id}`,{method:'PUT',body:JSON.stringify({status:'Ukončená',actual_check_out:today(),checked_out_at:checkoutAt})});
+      }
+      setCheckoutPerson(null);
+      setMsg('Check-out bol uložený a lôžko sa uvoľnilo.');
+      onRefresh();
+    }catch(e){setMsg(`Chyba: ${e.message}`)}
+  }
+
+  const PersonRow = ({p, urgent=false}) => <tr key={p.id} className={`border-t ${urgent?'bg-purple-50':''}`}>
+    <Td><div className="font-black">{p.full_name || `${p.first_name||''} ${p.last_name||''}`.trim() || 'Bez mena'}</div><div className="text-xs text-slate-500">{p.passport_no || p.document_number || 'doklad nezadaný'}</div></Td>
+    <Td>{p.company_name||'—'}</Td>
+    <Td>{bedLabel(p)}</Td>
+    <Td>{p.checkin_at ? String(p.checkin_at).slice(0,10) : '—'}</Td>
+    <Td>{p.expected_checkout_date || '—'}</Td>
+    <Td><button onClick={()=>setCheckoutPerson(p)} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl font-bold">Check-out</button></Td>
+  </tr>;
+
   return <div className="space-y-6">
-    <Top title="🔑 Check-in" onRefresh={onRefresh}/>
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 text-sm text-slate-600">
-      Vyber rezerváciu a doplň konkrétne osoby k prideleným lôžkam. Systém nedovolí prekročiť rezervovanú kapacitu a po naplnení kapacity check-in uzamkne.
+    <Top title="🚪 Check-in / Check-out" onRefresh={onRefresh}/>
+    <div className="grid md:grid-cols-3 gap-4">
+      <Card title="Čaká na check-in" value={arrivals.filter(x=>x.stats.free>0).length} color="border-blue-500"/>
+      <Card title="Ubytovaní teraz" value={checkedInPeople.length} color="border-teal-500"/>
+      <Card title="Dnešné check-out" value={dueOutToday.length} color="border-purple-500"/>
     </div>
-    <Table heads={['Rezervácia','Firma/platiteľ','Termín','Lôžka','Ubytované','Voľné','Akcia']}>
-      {activeBookings.map(b=>{
-        const st = checkinStats(b);
-        const canCheckIn = st.capacity > 0 && st.free > 0;
-        const canEdit = st.capacity > 0 && st.count > 0;
-        return <tr key={b.id} className={`border-t ${st.over ? 'bg-red-50' : ''}`}>
-          <Td teal>{b.booking_code}</Td>
-          <Td>{b.company_name||b.guest_name||b.contact_person||'—'}{st.over && <div className="text-xs text-red-600 font-bold mt-1">⚠ Nekonzistentné dáta: {st.rawCount}/{st.capacity}. Otvor a ulož check-in pre opravu.</div>}</Td>
-          <Td>{b.check_in_date} → {b.check_out_date}</Td>
-          <Td>{st.capacity || '—'}</Td>
-          <Td><span className={st.count >= st.capacity ? 'font-black text-green-700' : 'font-bold'}>{st.count}/{st.capacity || 0}</span></Td>
-          <Td>{st.free}</Td>
-          <Td>
-            <button
-              onClick={()=>setBooking(b)}
-              disabled={!canCheckIn && !canEdit}
-              className={`${(canCheckIn || canEdit) ? 'bg-teal-600 hover:bg-teal-700' : 'bg-slate-300 cursor-not-allowed'} text-white px-4 py-2 rounded-xl font-bold`}
-              title={st.capacity === 0 ? 'Rezervácia nemá pridelené lôžka' : st.free === 0 ? 'Kapacita je naplnená – možno iba upraviť existujúci check-in' : 'Doplniť osoby na check-in'}
-            >
-              {st.count > 0 ? 'Upraviť check-in' : 'Pridať check-in'}
-            </button>
-          </Td>
-        </tr>})}
-    </Table>
-    {activeBookings.length===0 && <div className="bg-white rounded-2xl p-8 text-center text-slate-500">Žiadne aktívne rezervácie na check-in.</div>}
+    {msg&&<Banner type={msg.startsWith('Chyba')?'error':undefined}>{msg}</Banner>}
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 text-sm text-slate-600">
+      Jedna pracovná obrazovka pre recepciu: rezervácie, ktoré čakajú na príchod, majú tlačidlo <b>Check-in</b>. Ubytované osoby majú tlačidlo <b>Check-out</b>. Po check-oute sa lôžko uvoľní automaticky.
+    </div>
+
+    <section className="space-y-3">
+      <div className="flex items-center justify-between"><h2 className="text-xl font-black text-slate-950">⬆ Príchody / Check-in</h2><span className="text-sm font-bold text-slate-500">{arrivals.length} rezervácií</span></div>
+      <Table heads={['Rezervácia','Firma/platiteľ','Termín','Lôžka','Ubytované','Voľné','Akcia']}>
+        {arrivals.map(({booking:b, stats:st})=>{
+          const canCheckIn = st.capacity > 0 && st.free > 0;
+          const canEdit = st.capacity > 0 && st.count > 0;
+          return <tr key={b.id} className={`border-t ${st.over ? 'bg-red-50' : ''}`}>
+            <Td teal>{b.booking_code}</Td>
+            <Td>{b.company_name||b.guest_name||b.contact_person||'—'}{st.over && <div className="text-xs text-red-600 font-bold mt-1">⚠ Nekonzistentné dáta: {st.rawCount}/{st.capacity}. Otvor a ulož check-in pre opravu.</div>}</Td>
+            <Td>{b.check_in_date} → {b.check_out_date}</Td>
+            <Td>{st.capacity || '—'}</Td>
+            <Td><span className={st.count >= st.capacity ? 'font-black text-green-700' : 'font-bold'}>{st.count}/{st.capacity || 0}</span></Td>
+            <Td>{st.free}</Td>
+            <Td>
+              <button
+                onClick={()=>setBooking(b)}
+                disabled={!canCheckIn && !canEdit}
+                className={`${(canCheckIn || canEdit) ? 'bg-teal-600 hover:bg-teal-700' : 'bg-slate-300 cursor-not-allowed'} text-white px-4 py-2 rounded-xl font-bold`}
+                title={st.capacity === 0 ? 'Rezervácia nemá pridelené lôžka' : st.free === 0 ? 'Kapacita je naplnená – možno iba upraviť existujúci check-in' : 'Doplniť osoby na check-in'}
+              >
+                {st.count > 0 ? 'Upraviť check-in' : 'Check-in'}
+              </button>
+            </Td>
+          </tr>})}
+      </Table>
+      {arrivals.length===0 && <div className="bg-white rounded-2xl p-8 text-center text-slate-500">Žiadne rezervácie na check-in.</div>}
+    </section>
+
+    <section className="space-y-3">
+      <div className="flex items-center justify-between"><h2 className="text-xl font-black text-slate-950">⬇ Odchody / Check-out</h2><span className="text-sm font-bold text-slate-500">{checkedInPeople.length} ubytovaných</span></div>
+      {dueOutToday.length>0 && <div className="rounded-2xl bg-purple-50 border border-purple-100 p-4 text-purple-800 font-bold">Dnes má odísť {dueOutToday.length} osoba/osôb.</div>}
+      <Table heads={['Osoba','Firma','Izba/lôžko','Check-in','Očakávaný odchod','Akcia']}>
+        {dueOutToday.map(p=><PersonRow key={p.id} p={p} urgent />)}
+        {dueOutLater.map(p=><PersonRow key={p.id} p={p} />)}
+      </Table>
+      {checkedInPeople.length===0 && <div className="bg-white rounded-2xl p-8 text-center text-slate-500">Momentálne nie je nikto ubytovaný.</div>}
+    </section>
+
     {booking&&<CheckInModal booking={booking} companies={companies} people={people} onClose={()=>setBooking(null)} onSaved={()=>{setBooking(null);onRefresh();}}/>}
+    {checkoutPerson&&<CheckOutModal person={checkoutPerson} onClose={()=>setCheckoutPerson(null)} onSave={saveCheckout}/>} 
   </div>;
 }
 
@@ -935,7 +997,7 @@ function FactoryResetAdmin({ onDone }){
   </div>
 }
 
-function Top({title,action,onAction,onRefresh}){return <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4"><div><h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-950">{title}</h1><p className="text-sm text-slate-500 mt-1">StayHub · Smart Accommodation Management v3.32</p></div><div className="flex gap-2 flex-wrap"><button onClick={onRefresh} className="btn-secondary">🔄 Obnoviť</button>{action&&<button onClick={onAction} className="btn-primary-soft"><Plus size={20}/>{action}</button>}</div></div>}
+function Top({title,action,onAction,onRefresh}){return <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4"><div><h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-950">{title}</h1><p className="text-sm text-slate-500 mt-1">StayHub · Smart Accommodation Management v5.3</p></div><div className="flex gap-2 flex-wrap"><button onClick={onRefresh} className="btn-secondary">🔄 Obnoviť</button>{action&&<button onClick={onAction} className="btn-primary-soft"><Plus size={20}/>{action}</button>}</div></div>}
 function Modal({title,onClose,onSave,children,wide}){return <div className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm z-50 flex items-center justify-center p-4"><div className={`modal-card bg-white rounded-3xl shadow-2xl w-full ${wide?'max-w-6xl':'max-w-xl'} max-h-[92vh] overflow-auto`}><div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/95 backdrop-blur z-10"><h2 className="text-2xl font-black tracking-tight text-slate-950">{title}</h2><button onClick={onClose} className="icon-btn"><X/></button></div><div className="p-6 space-y-5">{children}<div className="flex justify-end gap-3 pt-5 border-t border-slate-100"><button onClick={onClose} className="btn-muted">Zrušiť</button><button onClick={onSave} className="btn-save">Uložiť</button></div></div></div></div>}
 function Grid({children}){return <div className="grid md:grid-cols-2 gap-4">{children}</div>}
 function Field({label,value,onChange,type='text',placeholder,disabled}){return <label className="block"><span className="block text-sm font-bold text-slate-700 mb-1.5">{label}</span><input disabled={disabled} type={type} value={value||''} placeholder={placeholder} onChange={e=>onChange?.(e.target.value)} className="input-polish disabled:bg-slate-100"/></label>}
