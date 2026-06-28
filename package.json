@@ -1,6 +1,6 @@
 {
-  "name": "stayhub-v5-reservation-engine-refactor",
-  "version": "5.2.0",
+  "name": "stayhub-v5-database-stabilization",
+  "version": "5.2.1",
   "private": true,
   "type": "module",
   "scripts": {
