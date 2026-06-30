@@ -1936,3 +1936,57 @@ body {
     display: inline-flex !important;
   }
 }
+
+/* LTS Sprint 1 – global mobile language switcher.
+   The header language switcher can be hidden on compact screens, so this
+   dedicated mobile control is always visible and does not depend on Settings. */
+.mobile-global-language-switcher {
+  display: none;
+}
+@media (max-width: 1023px) {
+  .stayhub-v6 .mobile-global-language-switcher {
+    display: flex !important;
+    justify-content: flex-end;
+    padding: 8px 14px 0;
+    position: sticky;
+    top: 62px;
+    z-index: 54;
+    pointer-events: none;
+  }
+  .stayhub-v6 .mobile-global-language-switcher .lang-switcher {
+    pointer-events: auto;
+    position: static !important;
+    right: auto !important;
+    bottom: auto !important;
+    z-index: auto !important;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, .12) !important;
+    background: rgba(255, 255, 255, .92) !important;
+    backdrop-filter: blur(18px) saturate(1.25);
+  }
+}
+
+/* LTS Sprint 1 – reusable module primitives */
+.stayhub-workspace { display: grid; gap: 16px; }
+.stayhub-grid-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+.stayhub-card, .stayhub-section, .stayhub-card-row { background: rgba(255,255,255,.94); border: 1px solid rgba(226,232,240,.9); border-radius: 22px; box-shadow: 0 10px 28px rgba(15,23,42,.06); }
+.stayhub-card { padding: 18px; display: grid; gap: 8px; }
+.stayhub-card span, .stayhub-card-row small, .stayhub-muted { color: #64748b; font-size: 13px; font-weight: 700; }
+.stayhub-card strong { font-size: 32px; line-height: 1; letter-spacing: -0.04em; }
+.stayhub-section { padding: 18px; }
+.stayhub-section h2 { font-size: 18px; font-weight: 900; margin: 0 0 12px; color: #0f172a; }
+.stayhub-row, .stayhub-card-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; }
+.stayhub-row + .stayhub-row { border-top: 1px solid #eef2f7; }
+.stayhub-row button, .stayhub-card-row button, .stayhub-actions button, .stayhub-filter button, .stayhub-workspace button { min-height: 42px; border-radius: 14px; padding: 0 14px; font-weight: 900; background: #0f172a; color: white; }
+.stayhub-actions, .stayhub-filter { display: flex; gap: 10px; flex-wrap: wrap; }
+.stayhub-filter button { background: #eef2f7; color: #0f172a; }
+.stayhub-search, .stayhub-workspace input, .stayhub-workspace select { width: 100%; min-height: 46px; border: 1px solid #e2e8f0; border-radius: 16px; padding: 0 14px; background: white; }
+.stayhub-workspace label { display: grid; gap: 8px; font-size: 13px; font-weight: 900; color: #475569; }
+.stayhub-timeline { display: grid; gap: 12px; }
+.stayhub-timeline-row { display: grid; grid-template-columns: 84px 1fr; gap: 12px; align-items: center; }
+.stayhub-timeline-room { font-weight: 900; color: #0f172a; }
+.stayhub-timeline-bars { min-height: 46px; border-radius: 18px; background: #f1f5f9; padding: 7px; display: flex; align-items: center; overflow: hidden; }
+.stayhub-timeline-bar { height: 32px; min-width: 70px; border-radius: 999px; background: #0f766e !important; color: white; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 640px) {
+  .stayhub-card-row { align-items: flex-start; flex-direction: column; }
+  .stayhub-timeline-row { grid-template-columns: 60px 1fr; }
+}
