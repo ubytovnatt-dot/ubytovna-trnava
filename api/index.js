@@ -703,6 +703,139 @@ async function syncBookingPaymentTotals(req, db, bookingId) {
   return saved || { ...booking, ...update };
 }
 
+
+async function recomputeBookingWorkflow(req, db, bookingId, options = {}) {
+  if (!bookingId) return null;
+  const directDb = adminSupabase || db;
+  const propertyId = req.propertyId || 'postova-3';
+  const now = new Date().toISOString();
+
+  const { data: booking, error: bookingError } = await directDb
+    .from('bookings')
+    .select('*')
+    .eq('id', bookingId)
+    .maybeSingle();
+  if (bookingError) throw bookingError;
+  if (!booking || (booking.property_id && booking.property_id !== propertyId)) return null;
+  if (canonicalOperationalStatus(booking.status) === 'cancelled') return booking;
+
+  const { data: people, error: peopleError } = await directDb
+    .from('checkin_persons')
+    .select('*')
+    .eq('booking_id', booking.id)
+    .eq('property_id', propertyId);
+  if (peopleError) throw peopleError;
+
+  const allPeople = people || [];
+  const activePeople = allPeople.filter(p => canonicalOperationalStatus(p.status) === 'checked_in');
+  const checkedOutPeople = allPeople.filter(p => canonicalOperationalStatus(p.status) === 'checked_out');
+  const movedBeds = new Set(allPeople
+    .filter(p => ['checked_in','checked_out'].includes(canonicalOperationalStatus(p.status)))
+    .filter(p => p.room_id && p.bed_code !== undefined && p.bed_code !== null)
+    .map(bedIdentity));
+
+  const currentReserved = normalizeBeds(booking);
+  const nextReservedBeds = currentReserved.filter(bed => !movedBeds.has(bedIdentity(bed)));
+  const checkedInTimes = activePeople.map(p => p.checkin_at || p.checked_in_at || p.actual_check_in).filter(Boolean).sort();
+  const checkedOutTimes = checkedOutPeople.map(p => p.checkout_at || p.checked_out_at || p.actual_check_out).filter(Boolean).sort();
+
+  const update = { reserved_beds: nextReservedBeds, updated_at: now };
+
+  if (activePeople.length > 0) {
+    update.status = 'Check-in';
+    update.actual_check_in = booking.actual_check_in || checkedInTimes[0] || now;
+    update.actual_check_out = null;
+  } else if (allPeople.length > 0 && checkedOutPeople.length === allPeople.length) {
+    update.status = 'Ukončená';
+    update.reserved_beds = [];
+    update.actual_check_out = checkedOutTimes[checkedOutTimes.length - 1] || now;
+  } else if (nextReservedBeds.length > 0) {
+    update.status = booking.status && canonicalOperationalStatus(booking.status) !== 'checked_out' ? booking.status : 'Potvrdená';
+  } else if (currentReserved.length > 0 && nextReservedBeds.length === 0 && checkedOutPeople.length > 0) {
+    update.status = 'Ukončená';
+    update.actual_check_out = checkedOutTimes[checkedOutTimes.length - 1] || now;
+    update.reserved_beds = [];
+  }
+
+  const { data: saved, error: updateError } = await directDb
+    .from('bookings')
+    .update(update)
+    .eq('id', booking.id)
+    .select('*')
+    .maybeSingle();
+  if (updateError) throw updateError;
+
+  if (!options.skipBedRecompute) await recomputeBedInventory(req, directDb);
+  return saved || { ...booking, ...update };
+}
+
+async function recomputeBedInventory(req, db) {
+  const directDb = adminSupabase || db;
+  const propertyId = req.propertyId || 'postova-3';
+  const day = new Date().toISOString().slice(0, 10);
+
+  let bedsResult = await directDb.from('beds').select('*').eq('property_id', propertyId);
+  if (bedsResult.error) return { skipped: true, reason: bedsResult.error.message };
+  const beds = bedsResult.data || [];
+  if (!beds.length) return { updated: 0 };
+
+  const [{ data: people, error: peopleError }, { data: bookings, error: bookingsError }] = await Promise.all([
+    directDb.from('checkin_persons').select('*').eq('property_id', propertyId),
+    directDb.from('bookings').select('*').eq('property_id', propertyId)
+  ]);
+  if (peopleError) throw peopleError;
+  if (bookingsError) throw bookingsError;
+
+  const occupied = new Set((people || [])
+    .filter(p => canonicalOperationalStatus(p.status) === 'checked_in')
+    .filter(p => p.room_id && p.bed_code !== undefined && p.bed_code !== null)
+    .map(bedIdentity));
+
+  const reserved = new Set();
+  (bookings || [])
+    .filter(b => canonicalOperationalStatus(b.status) !== 'cancelled' && canonicalOperationalStatus(b.status) !== 'checked_out')
+    .filter(b => overlaps(day, nextDate(day), b.check_in_date || b.check_in, b.check_out_date || b.check_out))
+    .forEach(b => normalizeBeds(b).forEach(bed => {
+      const key = bedIdentity(bed);
+      if (!occupied.has(key)) reserved.add(key);
+    }));
+
+  let updated = 0;
+  for (const bed of beds) {
+    const key = bedIdentity(bed);
+    const nextStatus = occupied.has(key) ? 'occupied' : (reserved.has(key) ? 'reserved' : 'available');
+    if (bed.status !== nextStatus) {
+      const { error } = await directDb
+        .from('beds')
+        .update({ status: nextStatus, updated_at: new Date().toISOString() })
+        .eq('id', bed.id);
+      if (!error) updated += 1;
+    }
+  }
+  return { updated, occupied: occupied.size, reserved: reserved.size, available: Math.max(0, beds.length - occupied.size - reserved.size) };
+}
+
+function nextDate(day) {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+async function syncWorkflow(req, db) {
+  const directDb = adminSupabase || db;
+  const propertyId = req.propertyId || 'postova-3';
+  const { data: bookings, error } = await directDb.from('bookings').select('id').eq('property_id', propertyId);
+  if (error) throw error;
+  const syncedBookings = [];
+  for (const booking of bookings || []) {
+    const synced = await recomputeBookingWorkflow(req, directDb, booking.id, { skipBedRecompute: true });
+    if (synced) syncedBookings.push(synced.id);
+    await syncBookingPaymentTotals(req, directDb, booking.id).catch(() => null);
+  }
+  const beds = await recomputeBedInventory(req, directDb);
+  return { property_id: propertyId, bookings_synced: syncedBookings.length, beds };
+}
+
 function stripTransientFields(table, payload) {
   const out = { ...payload };
   if (table === 'checkin_persons') {
@@ -729,7 +862,7 @@ function stripTransientFields(table, payload) {
   return out;
 }
 
-app.get('/api', (_req, res) => res.json({ success: true, name: 'StayHub API v5.4 Payment Engine' }));
+app.get('/api', (_req, res) => res.json({ success: true, name: 'StayHub API v6.1 Workflow Sync Engine' }));
 app.get('/api/health', (_req, res) => res.json({
   success: true,
   status: 'OK',
@@ -1038,6 +1171,21 @@ app.post('/api/documents/upload', async (req, res) => {
   }
 });
 
+
+app.post('/api/workflow/sync', async (req, res) => {
+  if (!requireSupabase(req, res)) return;
+  if (!['admin','manager','reception','accounting','housekeeping'].includes(req.role)) {
+    return res.status(403).json({ success: false, error: 'Na synchronizáciu workflow nemáš oprávnenie.' });
+  }
+  try {
+    const result = await syncWorkflow(req, adminSupabase || req.supabase);
+    await writeAudit(req, 'bookings', 'workflow_sync', null, null, result);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/:table', async (req, res) => {
   if (!requireSupabase(req, res)) return;
   const table = TABLES[req.params.table];
@@ -1237,6 +1385,7 @@ app.post('/api/:table', async (req, res) => {
           .single();
         if (error) throw error;
         const syncedBooking = await syncBookingAfterPersonChange(req, db, data);
+        await syncWorkflow(req, db).catch(() => null);
         await writeAudit(req, table, 'deduplicate_update', data?.id, validation.existing, data);
         return res.status(200).json({ success: true, data, booking: syncedBooking, deduplicated: true });
       }
@@ -1259,8 +1408,8 @@ app.post('/api/:table', async (req, res) => {
     const data = Array.isArray(insertedRows) ? insertedRows[0] : insertedRows;
     if (!data) throw new Error('Zaznam sa vytvoril bez navratovych dat. Skontroluj Supabase RLS/select policy pre tuto tabulku.');
     let syncedBooking = null;
-    if (table === 'checkin_persons') syncedBooking = await syncBookingAfterPersonChange(req, db, data);
-    if (table === 'payments') syncedBooking = await syncBookingPaymentTotals(req, db, data.booking_id);
+    if (table === 'checkin_persons') { syncedBooking = await syncBookingAfterPersonChange(req, db, data); await syncWorkflow(req, db).catch(() => null); }
+    if (table === 'payments') { syncedBooking = await syncBookingPaymentTotals(req, db, data.booking_id); await syncWorkflow(req, db).catch(() => null); }
     await writeAudit(req, table, 'create', data?.id, null, data);
     res.status(201).json({ success: true, data, booking: syncedBooking });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
@@ -1392,8 +1541,8 @@ app.put('/api/:table/:id', async (req, res) => {
       return res.json({ success: true, data: fallbackData, booking: syncedBooking, warning: 'Update nevratil data zo Supabase.' });
     }
     let syncedBooking = null;
-    if (table === 'checkin_persons') syncedBooking = await syncBookingAfterPersonChange(req, db, data);
-    if (table === 'payments') syncedBooking = await syncBookingPaymentTotals(req, db, data.booking_id || oldData?.booking_id);
+    if (table === 'checkin_persons') { syncedBooking = await syncBookingAfterPersonChange(req, db, data); await syncWorkflow(req, db).catch(() => null); }
+    if (table === 'payments') { syncedBooking = await syncBookingPaymentTotals(req, db, data.booking_id || oldData?.booking_id); await syncWorkflow(req, db).catch(() => null); }
     await writeAudit(req, table, 'update', req.params.id, oldData, data);
     res.json({ success: true, data, booking: syncedBooking });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }

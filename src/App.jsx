@@ -243,6 +243,10 @@ export default function UbytovnaApp() {
   async function fetchData() {
     setLoading(true); setError(null);
     try {
+      // v6.1: before rendering any screen, ask the backend to reconcile workflow state.
+      // This keeps bookings, persons, beds, payments, Dashboard and Calendar in sync
+      // after check-in, check-out or payment actions.
+      await api('/api/workflow/sync', { method: 'POST' }).catch(() => null);
       const [r, b, p, c, pe, d, s] = await Promise.all([
         api('/api/rooms'), api('/api/bookings'), api('/api/payments'), api('/api/companies'), api('/api/checkin-persons'), api('/api/documents').catch(() => []), api('/api/stats')
       ]);
