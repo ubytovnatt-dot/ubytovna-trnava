@@ -769,160 +769,262 @@ function CheckOut({ people, onRefresh }) {
 }
 function CheckOutModal({ person, onClose, onSave }) { const [f,setF]=useState({...person,keys_returned:person.keys_returned||'Áno',room_condition_checkout:person.room_condition_checkout||'OK',damage_amount:person.damage_amount||0,checkout_note:person.checkout_note||''}); const sf=(k,v)=>setF(p=>({...p,[k]:v})); return <Modal title={`Check-out: ${person.first_name} ${person.last_name}`} onClose={onClose} onSave={()=>onSave(f)}><Grid><Field label="Izba/lôžko" value={bedLabel(person)} disabled/><Field label="Skutočný odchod" type="date" value={today()} disabled/><Select label="Kľúče vrátené" value={f.keys_returned} onChange={v=>sf('keys_returned',v)} opts={[['Áno','Áno'],['Nie','Nie']]}/><Select label="Stav izby" value={f.room_condition_checkout} onChange={v=>sf('room_condition_checkout',v)} opts={[['OK','OK'],['Poškodené','Poškodené'],['Znečistené','Znečistené']]}/><Field label="Škoda / doplatok" type="number" value={f.damage_amount} onChange={v=>sf('damage_amount',v)}/></Grid><Text label="Poznámka" value={f.checkout_note} onChange={v=>sf('checkout_note',v)}/></Modal>; }
 
-function Payments({ payments, bookings, companies, onRefresh, role }) { const [show,setShow]=useState(false); const [edit,setEdit]=useState(null); const [msg,setMsg]=useState(null); const stats=useMemo(()=>({paid:payments.filter(p=>['Zaplatené','paid'].includes(p.status)).reduce((s,p)=>s+Number(p.amount||0),0),pending:payments.filter(p=>!['Zaplatené','paid'].includes(p.status)).reduce((s,p)=>s+Number(p.amount||0),0),overdue:payments.filter(p=>!['Zaplatené','paid'].includes(p.status)&&p.due_date&&p.due_date<today()).length}),[payments]); async function save(payload){ try{ const saved = await api(edit?`/api/payments/${edit.id}`:'/api/payments',{method:edit?'PUT':'POST',body:JSON.stringify(payload)}); setShow(false); setEdit(null); setMsg('Platba uložená.'); await onRefresh(); }catch(e){setMsg(`Chyba: ${e.message}`);} } async function del(p){ if(!confirm('Vymazať platbu?')) return; await api(`/api/payments/${p.id}`,{method:'DELETE'}); onRefresh(); } return <div className="space-y-6"><Top title="💰 Platby" action="Nová platba" onAction={()=>{setEdit(null);setShow(true)}} onRefresh={onRefresh}/><div className="grid md:grid-cols-3 gap-4"><Card title="Zaplatené" value={eur(stats.paid)} color="border-green-500"/><Card title="Čaká" value={eur(stats.pending)} color="border-yellow-500"/><Card title="Po splatnosti" value={stats.overdue} color="border-red-500"/></div>{msg&&<Banner type={msg.startsWith('Chyba')?'error':undefined}>{msg}</Banner>}<Table heads={['Kód','Platiteľ','Za čo / koho','Rezervácia','Izba/lôžka','Mesiac','Suma','Stav','Poznámka','Akcie']}>{payments.map(p=><tr key={p.id} className="border-t"><Td teal>{p.payment_code}</Td><Td>{p.payer_name}</Td><Td>{p.tenant_name}</Td><Td>{bookings.find(b=>b.id===p.booking_id)?.booking_code||'—'}</Td><Td>{p.room_label}</Td><Td>{p.payment_month}</Td><Td>{eur(p.amount)}</Td><Td><Badge green={p.status==='Zaplatené'}>{p.status}</Badge></Td><Td>{p.note || p.notes || '—'}</Td><Td><div className="flex gap-2"><Btn onClick={()=>{setEdit(p);setShow(true)}}><Edit2 size={16}/></Btn>{canDelete(role)&&<Btn red onClick={()=>del(p)}><Trash2 size={16}/></Btn>}</div></Td></tr>)}</Table>{show&&<PaymentModal payment={edit} bookings={bookings} companies={companies} onClose={()=>setShow(false)} onSave={save}/>}</div>; }
-function PaymentModal({ payment, booking, bookings = [], onClose, onSave }) {
-  const selectedInitial = booking || bookings.find(b=>String(b.id)===String(payment?.booking_id)) || bookings[0];
-  const currentPaid = 0;
-  const [f,setF]=useState({
-    payment_code:payment?.payment_code||'',
-    booking_id:payment?.booking_id||selectedInitial?.id||'',
-    payer_type:payment?.payer_type||selectedInitial?.payer_type||'company',
-    payment_method:payment?.payment_method||payment?.method||'cash',
-    payment_scope:payment?.payment_scope||'booking',
-    payment_month:payment?.payment_month||monthOf(selectedInitial?.check_in_date),
-    amount:payment?.amount||selectedInitial?.total_price||'',
-    due_date:payment?.due_date||selectedInitial?.check_in_date||today(),
-    paid_date:payment?.paid_date||today(),
-    status:payment?.status||'Zaplatené',
-    note:payment?.note||''
-  });
-  const b=booking || bookings.find(x=>String(x.id)===String(f.booking_id));
-  const beds=parseBeds(b).map(bedLabel).join(', ');
-  const payer=b?.payer_type==='person'?(b?.guest_name||'Osoba'):(b?.company_name||'Firma');
-  const sf=(k,v)=>setF(p=>({...p,[k]:v}));
-  useEffect(()=>{ if(!b) return; setF(p=>({...p,payment_month:p.payment_month||monthOf(b.check_in_date),amount:p.amount||b.total_price||'',due_date:p.due_date||b.check_in_date||today()})); },[f.booking_id]);
-  const submit=()=>{
-    const isPaid=['Zaplatené','paid','Đã thanh toán','Da thanh toan'].includes(f.status);
-    const payload={...f,
-      booking_id:b?.id||null,
-      company_id:b?.payer_type==='person'?null:(b?.company_id||null),
-      payer_type:b?.payer_type||f.payer_type||'company',
-      payer_name:payer,
-      tenant_name:b?.payer_type==='person'?b?.guest_name:`${b?.requested_beds||parseBeds(b).length} lôžok / osoby pri check-ine`,
-      room_label:beds,
-      status:isPaid?'Zaplatené':f.status,
-      payment_code:f.payment_code||undefined,
-      amount:f.amount?Number(f.amount):0,
-      due_date:f.due_date||null,
-      paid_date:f.paid_date|| (isPaid ? today() : null),
-      paid_at:isPaid?new Date().toISOString():null,
-      currency:'EUR',
-      note:f.note||null
-    };
-    onSave(payload);
-  };
-  return <Modal title={payment?'Upraviť platbu':'Pridať platbu k rezervácii'} onClose={onClose} onSave={submit} wide><Grid>{!booking&&<Select label="Rezervácia" value={f.booking_id} onChange={v=>sf('booking_id',v)} opts={bookings.map(b=>[b.id,`${b.booking_code} • ${b.company_name||b.guest_name} • ${b.requested_beds||parseBeds(b).length} lôžok`])}/>}<Field label="Platiteľ" value={payer} disabled/><Select label="Spôsob platby" value={f.payment_method} onChange={v=>sf('payment_method',v)} opts={[["cash","Hotovosť"],["card","Karta"],["bank_transfer","Bankový prevod"],["other","Iné"]]}/><Select label="Za čo" value={f.payment_scope} onChange={v=>sf('payment_scope',v)} opts={[["booking","Celá rezervácia"],["person","Konkrétna osoba"],["deposit","Kaucia"],["extra","Doplatok / iné"]]}/><Field label="Mesiac" value={f.payment_month} onChange={v=>sf('payment_month',v)}/><Field label="Suma" type="number" value={f.amount} onChange={v=>sf('amount',v)}/><Field label="Splatnosť" type="date" value={f.due_date} onChange={v=>sf('due_date',v)}/><Field label="Dátum úhrady" type="date" value={f.paid_date} onChange={v=>sf('paid_date',v)}/><Select label="Stav" value={f.status} onChange={v=>sf('status',v)} opts={[["Čaká","Čaká"],["Zaplatené","Zaplatené"],["Po splatnosti","Po splatnosti"]]}/><Field label="Izba/lôžka" value={beds} disabled/></Grid><Text label="Poznámka" value={f.note} onChange={v=>sf('note',v)}/></Modal>;
+function paymentMethodLabel(method) {
+  const map = { cash: 'Hotovosť', card: 'Karta', bank_transfer: 'Bankový prevod', transfer: 'Bankový prevod', other: 'Iné' };
+  return map[method] || method || 'Platba';
 }
+function paymentScopeLabel(scope) {
+  const map = { booking: 'Celá rezervácia', person: 'Konkrétna osoba', deposit: 'Kaucia', extra: 'Doplatok / iné' };
+  return map[scope] || scope || 'Celá rezervácia';
+}
+function bookingTitle(b = {}) {
+  return b.company_name || b.guest_name || b.payer_name || b.booking_code || 'Rezervácia';
+}
+function bookingPaymentRows(booking, payments = []) {
+  return (payments || []).filter((p) => String(p.booking_id || p.reservation_id || '') === String(booking?.id || ''));
+}
+function bookingDebtSummary(booking, payments = []) {
+  const related = bookingPaymentRows(booking, payments);
+  const paidAmount = related
+    .filter((p) => paymentStatusPaid(p.status))
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  const total = Number(booking?.total_price || booking?.price_total || booking?.amount_total || 0);
+  const balance = Math.max(0, total - paidAmount);
+  const overdue = related.some((p) => !paymentStatusPaid(p.status) && p.due_date && p.due_date < today());
+  return { related, paidAmount, total, balance, isPaid: total > 0 ? balance <= 0 : paidAmount > 0, overdue };
+}
+function paymentWorkspaceRows(bookings = [], payments = []) {
+  const rows = (bookings || []).map((booking) => ({ booking, ...bookingDebtSummary(booking, payments) }));
+  const attachedPaymentIds = new Set(rows.flatMap((r) => r.related.map((p) => String(p.id))));
+  const orphanPayments = (payments || [])
+    .filter((p) => !attachedPaymentIds.has(String(p.id)))
+    .map((p) => ({ booking: null, related: [p], total: Number(p.amount || 0), paidAmount: paymentStatusPaid(p.status) ? Number(p.amount || 0) : 0, balance: paymentStatusPaid(p.status) ? 0 : Number(p.amount || 0), isPaid: paymentStatusPaid(p.status), overdue: !paymentStatusPaid(p.status) && p.due_date && p.due_date < today(), orphan: true, payment: p }));
+  return [...rows, ...orphanPayments];
+}
+function Payments({ payments, bookings, companies, onRefresh, role }) {
+  const [show, setShow] = useState(false);
+  const [edit, setEdit] = useState(null);
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const [filter, setFilter] = useState('due');
+  const [query, setQuery] = useState('');
 
-function Documents({ documents = [], people = [], companies = [], onRefresh }) {
-  const [show,setShow]=useState(false); const [edit,setEdit]=useState(null); const [msg,setMsg]=useState(null);
-  const expiring = documents.filter(d => d.expiry_date && d.expiry_date <= nextDays(30));
-  async function save(f){try{await api(edit?`/api/documents/${edit.id}`:'/api/documents',{method:edit?'PUT':'POST',body:JSON.stringify(f)}); setShow(false); setEdit(null); setMsg('Dokument uložený.'); onRefresh();}catch(e){setMsg(`Chyba: ${e.message}`)}}
-  async function del(d){ if(!confirm('Vymazať dokument?')) return; await api(`/api/documents/${d.id}`,{method:'DELETE'}); onRefresh(); }
-  return <div className="space-y-6"><Top title="🤖 AI OCR" action="Nový scan" onAction={()=>{setEdit(null);setShow(true)}} onRefresh={onRefresh}/>
-    <div className="rounded-3xl border border-teal-100 bg-gradient-to-br from-teal-50 to-white p-5">
-      <div className="text-lg font-black text-slate-950">Jednoduchý modul: nahráš pas/víza/fotku a AI vyplní údaje.</div>
-      <div className="text-sm text-slate-600 mt-1">Bez zložitého Document Center. Súbor sa uloží do Supabase Storage a OCR predvyplní číslo dokladu, meno, dátum platnosti a poznámku.</div>
+  const rows = useMemo(() => paymentWorkspaceRows(bookings, payments), [bookings, payments]);
+  const dashboard = useMemo(() => {
+    const total = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
+    const paidTotal = rows.reduce((sum, row) => sum + Number(row.paidAmount || 0), 0);
+    const dueTotal = rows.reduce((sum, row) => sum + Number(row.balance || 0), 0);
+    const dueCount = rows.filter((row) => Number(row.balance || 0) > 0).length;
+    const overdueCount = rows.filter((row) => row.overdue).length;
+    return { total, paidTotal, dueTotal, dueCount, overdueCount };
+  }, [rows]);
+
+  const filteredRows = rows.filter((row) => {
+    const haystack = [row.booking?.booking_code, bookingTitle(row.booking || {}), row.booking?.company_name, row.booking?.guest_name, row.payment?.payer_name, row.payment?.payment_code]
+      .filter(Boolean).join(' ').toLowerCase();
+    const matchQuery = !query || haystack.includes(query.toLowerCase());
+    const matchFilter = filter === 'all' ||
+      (filter === 'due' && Number(row.balance || 0) > 0) ||
+      (filter === 'paid' && Number(row.balance || 0) <= 0 && Number(row.paidAmount || 0) > 0) ||
+      (filter === 'overdue' && row.overdue);
+    return matchQuery && matchFilter;
+  });
+
+  async function save(payload) {
+    try {
+      await api(edit ? `/api/payments/${edit.id}` : '/api/payments', { method: edit ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+      setShow(false);
+      setEdit(null);
+      setSelectedBooking(null);
+      setMsg('Platba uložená a rezervácia prepočítaná.');
+      await onRefresh();
+    } catch (e) {
+      setMsg(`Chyba: ${e.message}`);
+    }
+  }
+
+  async function del(p) {
+    if (!confirm('Vymazať platbu?')) return;
+    try {
+      await api(`/api/payments/${p.id}`, { method: 'DELETE' });
+      setMsg('Platba vymazaná.');
+      await onRefresh();
+    } catch (e) {
+      setMsg(`Chyba: ${e.message}`);
+    }
+  }
+
+  const selectedRow = selectedBooking ? rows.find((row) => String(row.booking?.id) === String(selectedBooking.id)) : null;
+
+  return <div className="space-y-6 payment-workspace">
+    <Top title="💳 Platby" action="Nová platba" onAction={() => { setEdit(null); setSelectedBooking(null); setShow(true); }} onRefresh={onRefresh} />
+
+    <div className="grid md:grid-cols-4 gap-4">
+      <Card title="Cena spolu" value={eur(dashboard.total)} color="border-slate-400" />
+      <Card title="Zaplatené" value={eur(dashboard.paidTotal)} color="border-green-500" />
+      <Card title="Zostáva" value={eur(dashboard.dueTotal)} color="border-yellow-500" />
+      <Card title="Po splatnosti" value={dashboard.overdueCount} color="border-red-500" />
     </div>
-    <div className="grid md:grid-cols-3 gap-4"><Card title="Scany spolu" value={documents.length} color="border-blue-500"/><Card title="Expirácia do 30 dní" value={expiring.length} color="border-red-500"/><Card title="Osoby v evidencii" value={people.length} color="border-teal-500"/></div>{msg&&<Banner type={msg.startsWith('Chyba')?'error':undefined}>{msg}</Banner>}<Table heads={['Typ','Osoba/Firma','Číslo','Platnosť do','Súbor','OCR poznámka','Akcie']}>{documents.map(d=><tr key={d.id} className="border-t"><Td teal>{d.document_type}</Td><Td>{d.person_name || d.company_name || '—'}</Td><Td>{d.document_number || '—'}</Td><Td>{d.expiry_date || '—'}</Td><Td>{d.file_url ? <a className="text-teal-700 font-bold" href={d.file_url} target="_blank">Otvoriť</a> : '—'}</Td><Td>{d.note}</Td><Td><div className="flex gap-2"><Btn onClick={()=>{setEdit(d);setShow(true)}}><Edit2 size={16}/></Btn><Btn red onClick={()=>del(d)}><Trash2 size={16}/></Btn></div></Td></tr>)}</Table>{show&&<DocumentModal document={edit} people={people} companies={companies} onClose={()=>setShow(false)} onSave={save}/>}</div>;
-}
 
-function readFileAsBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
+    {msg && <Banner type={msg.startsWith('Chyba') ? 'error' : undefined}>{msg}</Banner>}
 
-function DocumentModal({ document, people, companies, onClose, onSave }) {
-  const [f,setF]=useState({
-    document_type:document?.document_type||'Pas',
-    person_id:document?.person_id||'',person_name:document?.person_name||'',
-    company_id:document?.company_id||'',company_name:document?.company_name||'',
-    document_number:document?.document_number||'',issue_date:document?.issue_date||'',expiry_date:document?.expiry_date||'',
-    file_url:document?.file_url||'',storage_path:document?.storage_path||'',file_name:document?.file_name||'',mime_type:document?.mime_type||'',size_bytes:document?.size_bytes||'',
-    note:document?.note||''
-  });
-  const [uploading,setUploading]=useState(false);
-  const [ocrLoading,setOcrLoading]=useState(false);
-  const [ocrBase64,setOcrBase64]=useState('');
-  const [uploadError,setUploadError]=useState('');
-  const sf=(k,v)=>setF(p=>({...p,[k]:v}));
-
-  useEffect(()=>{
-    const person=people.find(p=>String(p.id)===String(f.person_id));
-    if(person) setF(p=>({...p,person_name:`${person.first_name||''} ${person.last_name||''}`.trim(),company_id:person.company_id||p.company_id,company_name:person.company_name||p.company_name}));
-  },[f.person_id]);
-  useEffect(()=>{ const c=companies.find(c=>String(c.id)===String(f.company_id)); if(c) sf('company_name', c.company_name); },[f.company_id]);
-
-  async function uploadFile(file){
-    if(!file) return;
-    setUploadError('');
-    if(file.size > 8 * 1024 * 1024){ setUploadError('Súbor je príliš veľký. Maximum je 8 MB.'); return; }
-    setUploading(true);
-    try{
-      const base64 = await readFileAsBase64(file);
-      setOcrBase64(base64);
-      const uploaded = await api('/api/documents/upload', { method:'POST', body: JSON.stringify({ filename:file.name, mime_type:file.type, base64, document_type:f.document_type, person_id:f.person_id, company_id:f.company_id }) });
-      setF(p=>({...p, file_url:uploaded.file_url || p.file_url, storage_path:uploaded.storage_path || '', file_name:file.name, mime_type:file.type, size_bytes:file.size }));
-    }catch(e){ setUploadError(e.message || 'Upload zlyhal.'); }
-    finally{ setUploading(false); }
-  }
-
-
-  async function runOcr(){
-    if(!ocrBase64 && !f.file_url && !f.preview_url){ setUploadError('Najprv nahraj alebo odfoť dokument.'); return; }
-    setUploadError('');
-    setOcrLoading(true);
-    try{
-      const result = await api('/api/documents/ocr', { method:'POST', body: JSON.stringify({ base64: ocrBase64, file_url:f.file_url||f.preview_url, mime_type:f.mime_type, document_type:f.document_type }) });
-      setF(p=>({
-        ...p,
-        document_number: result.document_number || p.document_number,
-        expiry_date: result.expiry_date || p.expiry_date,
-        issue_date: result.issue_date || p.issue_date,
-        person_name: result.full_name || p.person_name,
-        note: [p.note, result.summary ? `OCR: ${result.summary}` : 'OCR spracované'].filter(Boolean).join('\n')
-      }));
-    }catch(e){ setUploadError(e.message || 'OCR zlyhalo.'); }
-    finally{ setOcrLoading(false); }
-  }
-
-  return <Modal title={document?'Upraviť AI OCR záznam':'Nový AI OCR scan'} onClose={onClose} onSave={()=>onSave(f)} wide>
-    <Grid>
-      <Select label="Typ dokumentu" value={f.document_type} onChange={v=>sf('document_type',v)} opts={['Pas','Víza','Fotografia','Občiansky preukaz','Pobytová karta','Pracovné povolenie','Zmluva o ubytovaní','GDPR súhlas','Iné'].map(x=>[x,x])}/>
-      <Select label="Osoba" value={f.person_id} onChange={v=>sf('person_id',v)} opts={[["",'—'],...people.map(p=>[p.id,`${p.first_name||''} ${p.last_name||''} • ${bedLabel(p)}`])]}/>
-      <Select label="Firma" value={f.company_id} onChange={v=>sf('company_id',v)} opts={[["",'—'],...companies.map(c=>[c.id,c.company_name])]}/>
-      <Field label="Číslo dokumentu" value={f.document_number} onChange={v=>sf('document_number',v)}/>
-      <Field label="Vydané" type="date" value={f.issue_date} onChange={v=>sf('issue_date',v)}/>
-      <Field label="Platné do" type="date" value={f.expiry_date} onChange={v=>sf('expiry_date',v)}/>
-    </Grid>
-
-    <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <div className="text-sm font-black text-slate-700">AI OCR scan</div>
-          <div className="text-sm text-slate-500">Nahraj pas, víza alebo fotku. Potom klikni na AI OCR a systém predvyplní údaje.</div>
+    <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-4 md:p-5 space-y-4">
+      <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {[
+            ['due', `Na úhradu (${dashboard.dueCount})`],
+            ['overdue', `Po splatnosti (${dashboard.overdueCount})`],
+            ['paid', 'Uhradené'],
+            ['all', 'Všetko']
+          ].map(([value, label]) => <button key={value} onClick={() => setFilter(value)} className={`px-4 py-2.5 rounded-2xl text-sm font-black whitespace-nowrap transition ${filter === value ? 'bg-slate-950 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>{label}</button>)}
         </div>
-        <label className="btn-primary-soft cursor-pointer justify-center">
-          {uploading ? 'Nahrávam…' : 'Vybrať súbor / odfotiť mobilom'}
-          <input type="file" className="hidden" accept=".pdf,image/*" capture="environment" onChange={e=>uploadFile(e.target.files?.[0])}/>
-        </label>
+        <input className="input-polish md:max-w-xs" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Hľadať firmu, rezerváciu alebo platbu" />
       </div>
-      {uploadError && <div className="mt-3 text-sm font-bold text-red-600">{uploadError}</div>}
-      {(f.file_name || f.storage_path || f.file_url) && <div className="mt-4 rounded-2xl bg-white border border-slate-200 p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div>
-          <div className="font-black text-slate-950">{f.file_name || 'Nahratý dokument'}</div>
-          <div className="text-xs text-slate-500 break-all">{f.storage_path || f.file_url}</div>
-        </div>
-        <div className="flex gap-2">{(f.preview_url||f.file_url) && <a className="btn-muted text-center" href={f.preview_url||f.file_url} target="_blank" rel="noreferrer">Skontrolovať fotku</a>}<button type="button" className="btn-primary-soft" onClick={runOcr} disabled={ocrLoading}>{ocrLoading ? 'AI číta…' : 'AI OCR'}</button></div>
-      </div>}
-    </div>
 
-    <Text label="OCR poznámka" value={f.note} onChange={v=>sf('note',v)}/>
-  </Modal>
+      <div className="grid xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,.95fr)] gap-5">
+        <div className="space-y-3">
+          {filteredRows.length === 0 && <div className="rounded-3xl bg-slate-50 p-6 text-slate-500 font-bold">Žiadne platby alebo dlhy v tomto filtri.</div>}
+          {filteredRows.map((row) => {
+            const booking = row.booking;
+            const title = booking ? bookingTitle(booking) : (row.payment?.payer_name || 'Samostatná platba');
+            const active = selectedBooking && booking && String(selectedBooking.id) === String(booking.id);
+            return <button key={booking?.id || row.payment?.id} type="button" onClick={() => booking ? setSelectedBooking(booking) : null} className={`w-full text-left rounded-3xl border p-4 md:p-5 transition ${active ? 'border-slate-950 bg-slate-950 text-white shadow-xl shadow-slate-900/15' : 'border-slate-100 bg-slate-50 hover:bg-white hover:shadow-sm'}`}>
+              <div className="flex justify-between gap-3">
+                <div>
+                  <div className={`text-xs font-black uppercase tracking-widest ${active ? 'text-slate-300' : 'text-slate-400'}`}>{booking?.booking_code || row.payment?.payment_code || 'Platba'}</div>
+                  <div className="text-lg md:text-xl font-black mt-1">{title}</div>
+                  <div className={`text-sm mt-1 ${active ? 'text-slate-300' : 'text-slate-500'}`}>{booking ? `${booking.check_in_date || '—'} → ${booking.check_out_date || '—'}` : paymentMethodLabel(row.payment?.payment_method || row.payment?.method)}</div>
+                </div>
+                <Badge green={row.isPaid}>{row.isPaid ? 'Uhradené' : row.overdue ? 'Po splatnosti' : 'Na úhradu'}</Badge>
+              </div>
+              <div className="grid grid-cols-3 gap-2 mt-4">
+                <div className={`rounded-2xl p-3 ${active ? 'bg-white/10' : 'bg-white'}`}><div className="text-xs opacity-70 font-bold">Cena</div><b>{eur(row.total)}</b></div>
+                <div className={`rounded-2xl p-3 ${active ? 'bg-white/10' : 'bg-emerald-50'}`}><div className="text-xs opacity-70 font-bold">Zaplatené</div><b>{eur(row.paidAmount)}</b></div>
+                <div className={`rounded-2xl p-3 ${active ? 'bg-white/10' : 'bg-amber-50'}`}><div className="text-xs opacity-70 font-bold">Zostáva</div><b>{eur(row.balance)}</b></div>
+              </div>
+            </button>;
+          })}
+        </div>
+
+        <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm min-h-[320px]">
+          {!selectedRow && <div className="h-full flex flex-col justify-center items-center text-center text-slate-500 p-8">
+            <CreditCard size={42} />
+            <h3 className="text-xl font-black text-slate-900 mt-4">Vyber rezerváciu</h3>
+            <p className="text-sm mt-2">Klikni na rezerváciu vľavo a uvidíš detail úhrady, históriu a rýchle pridanie platby.</p>
+          </div>}
+          {selectedRow && <div className="space-y-5">
+            <div className="flex justify-between gap-3 items-start">
+              <div>
+                <div className="text-xs font-black text-slate-400 uppercase tracking-widest">Detail úhrady</div>
+                <h2 className="text-2xl font-black text-slate-950 mt-1">{bookingTitle(selectedRow.booking)}</h2>
+                <p className="text-sm text-slate-500">{selectedRow.booking?.booking_code} · {selectedRow.booking?.check_in_date} → {selectedRow.booking?.check_out_date}</p>
+              </div>
+              <button className="btn-save" onClick={() => { setEdit(null); setSelectedBooking(selectedRow.booking); setShow(true); }}>+ Platba</button>
+            </div>
+            <div className="rounded-3xl bg-slate-50 p-4 space-y-3">
+              <div className="flex justify-between"><span>Cena spolu</span><b>{eur(selectedRow.total)}</b></div>
+              <div className="flex justify-between text-emerald-700"><span>Zaplatené</span><b>{eur(selectedRow.paidAmount)}</b></div>
+              <div className="flex justify-between text-amber-700"><span>Zostáva</span><b>{eur(selectedRow.balance)}</b></div>
+              <div className="h-3 rounded-full bg-slate-200 overflow-hidden"><div className="h-full bg-emerald-500" style={{ width: `${Math.min(100, selectedRow.total ? (selectedRow.paidAmount / selectedRow.total) * 100 : 0)}%` }} /></div>
+            </div>
+            <div>
+              <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">História platieb</div>
+              {selectedRow.related.length === 0 && <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500 font-bold">Zatiaľ bez platby.</div>}
+              <div className="space-y-2">
+                {selectedRow.related.map((p) => <div key={p.id} className="rounded-2xl border border-slate-100 p-3 flex justify-between gap-3 items-start">
+                  <div>
+                    <b>{eur(p.amount)}</b>
+                    <div className="text-sm text-slate-500">{p.paid_date || p.due_date || p.created_at?.slice(0, 10) || '—'} · {paymentMethodLabel(p.payment_method || p.method)} · {paymentScopeLabel(p.payment_scope)}</div>
+                    {(p.note || p.notes) && <div className="text-sm text-slate-600 mt-1">{p.note || p.notes}</div>}
+                  </div>
+                  <div className="flex gap-2 shrink-0"><Btn onClick={() => { setEdit(p); setSelectedBooking(selectedRow.booking); setShow(true); }}><Edit2 size={16} /></Btn>{canDelete(role) && <Btn red onClick={() => del(p)}><Trash2 size={16} /></Btn>}</div>
+                </div>)}
+              </div>
+            </div>
+          </div>}
+        </div>
+      </div>
+    </div>
+    {show && <PaymentModal payment={edit} booking={selectedBooking} bookings={bookings} companies={companies} payments={payments} onClose={() => { setShow(false); setEdit(null); setSelectedBooking(null); }} onSave={save} />}
+  </div>;
+}
+
+function PaymentModal({ payment, booking, bookings = [], payments = [], onClose, onSave }) {
+  const selectedInitial = booking || bookings.find(b => String(b.id) === String(payment?.booking_id)) || bookings[0];
+  const selectedSummary = selectedInitial ? bookingDebtSummary(selectedInitial, payments) : null;
+  const remaining = selectedSummary ? selectedSummary.balance : Number(selectedInitial?.total_price || 0);
+  const [f, setF] = useState({
+    payment_code: payment?.payment_code || '',
+    booking_id: payment?.booking_id || selectedInitial?.id || '',
+    payer_type: payment?.payer_type || selectedInitial?.payer_type || 'company',
+    payment_method: payment?.payment_method || payment?.method || 'cash',
+    payment_scope: payment?.payment_scope || 'booking',
+    payment_month: payment?.payment_month || monthOf(selectedInitial?.check_in_date),
+    amount: payment?.amount || remaining || selectedInitial?.total_price || '',
+    due_date: payment?.due_date || selectedInitial?.check_in_date || today(),
+    paid_date: payment?.paid_date || today(),
+    status: payment?.status || 'Zaplatené',
+    note: payment?.note || payment?.notes || ''
+  });
+  const b = bookings.find(x => String(x.id) === String(f.booking_id)) || selectedInitial;
+  const summary = b ? bookingDebtSummary(b, payments.filter(p => String(p.id) !== String(payment?.id || ''))) : null;
+  const payer = b?.payer_type === 'person' ? (b?.guest_name || 'Osoba') : (b?.company_name || 'Firma');
+  const beds = b ? parseBeds(b).map(bedLabel).join(', ') : '';
+  const sf = (k, v) => setF(prev => ({ ...prev, [k]: v }));
+
+  useEffect(() => {
+    const next = bookings.find(x => String(x.id) === String(f.booking_id));
+    if (!next) return;
+    const nextSummary = bookingDebtSummary(next, payments.filter(p => String(p.id) !== String(payment?.id || '')));
+    setF(prev => ({
+      ...prev,
+      payment_month: prev.payment_month || monthOf(next.check_in_date),
+      amount: payment ? prev.amount : (nextSummary.balance || next.total_price || prev.amount || ''),
+      due_date: prev.due_date || next.check_in_date || today(),
+      payer_type: prev.payer_type || next.payer_type || 'company'
+    }));
+  }, [f.booking_id]);
+
+  const submit = () => onSave({
+    payment_code: f.payment_code || undefined,
+    booking_id: f.booking_id,
+    company_id: b?.company_id || null,
+    payer_type: f.payer_type,
+    payer_name: payer,
+    tenant_name: f.payment_scope === 'booking' ? 'Celá rezervácia' : paymentScopeLabel(f.payment_scope),
+    payment_method: f.payment_method,
+    method: f.payment_method,
+    payment_scope: f.payment_scope,
+    payment_month: f.payment_month,
+    amount: Number(f.amount || 0),
+    due_date: f.due_date || null,
+    paid_date: f.status === 'Zaplatené' ? (f.paid_date || today()) : null,
+    status: f.status,
+    room_label: beds,
+    note: f.note
+  });
+
+  return <Modal title={payment ? 'Upraviť platbu' : 'Pridať platbu'} onClose={onClose} onSave={submit} wide>
+    {b && <div className="rounded-3xl bg-slate-50 p-4 grid md:grid-cols-4 gap-3">
+      <div><div className="text-xs font-bold text-slate-500">Rezervácia</div><b>{b.booking_code || '—'}</b></div>
+      <div><div className="text-xs font-bold text-slate-500">Platiteľ</div><b>{payer}</b></div>
+      <div><div className="text-xs font-bold text-slate-500">Zostáva</div><b className="text-amber-700">{eur(summary?.balance || 0)}</b></div>
+      <div><div className="text-xs font-bold text-slate-500">Lôžka</div><b>{beds || '—'}</b></div>
+    </div>}
+    <Grid>
+      {!booking && <Select label="Rezervácia" value={f.booking_id} onChange={v => sf('booking_id', v)} opts={bookings.map(b => [b.id, `${b.booking_code} • ${bookingTitle(b)} • ${eur(bookingDebtSummary(b, payments).balance)} zostáva`])} />}
+      <Field label="Platiteľ" value={payer} disabled />
+      <Select label="Spôsob platby" value={f.payment_method} onChange={v => sf('payment_method', v)} opts={[["cash", "Hotovosť"], ["card", "Karta"], ["bank_transfer", "Bankový prevod"], ["other", "Iné"]]} />
+      <Select label="Za čo" value={f.payment_scope} onChange={v => sf('payment_scope', v)} opts={[["booking", "Celá rezervácia"], ["person", "Konkrétna osoba"], ["deposit", "Kaucia"], ["extra", "Doplatok / iné"]]} />
+      <Field label="Mesiac" value={f.payment_month} onChange={v => sf('payment_month', v)} />
+      <Field label="Suma" type="number" value={f.amount} onChange={v => sf('amount', v)} />
+      <Field label="Splatnosť" type="date" value={f.due_date} onChange={v => sf('due_date', v)} />
+      <Field label="Dátum úhrady" type="date" value={f.paid_date} onChange={v => sf('paid_date', v)} />
+      <Select label="Stav" value={f.status} onChange={v => sf('status', v)} opts={[["Čaká", "Čaká"], ["Zaplatené", "Zaplatené"], ["Po splatnosti", "Po splatnosti"]]} />
+      <Field label="Izba/lôžka" value={beds} disabled />
+    </Grid>
+    <Text label="Poznámka" value={f.note} onChange={v => sf('note', v)} />
+  </Modal>;
 }
 
 function Reports({ rooms = [], bookings = [], payments = [], people = [], companies = [], documents = [] }) {

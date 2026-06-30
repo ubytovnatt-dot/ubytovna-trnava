@@ -1,6 +1,6 @@
 {
-  "name": "stayhub-v6-smart-checkin-ai-ocr",
-  "version": "6.2.0",
+  "name": "stayhub-v63-payment-workspace",
+  "version": "6.3.0",
   "private": true,
   "type": "module",
   "scripts": {
