@@ -276,7 +276,7 @@ export default function UbytovnaApp() {
     {activeTab === 'calendar' && <AuroraCalendar rooms={rooms} bookings={bookings} people={people} />}
     {activeTab === 'documents' && <Documents documents={documents} people={people} companies={companies} onRefresh={fetchData} role={currentRole} />}
     {activeTab === 'reports' && <Reports rooms={rooms} bookings={bookings} payments={payments} people={people} companies={companies} documents={documents} />}
-    {activeTab === 'settings' && <SettingsTab role={currentRole} />}
+    {activeTab === 'settings' && <SettingsTab role={currentRole} lang={lang} setLang={changeLang} />}
   </main></div><BottomNav active={activeTab} setActive={(tab)=>{ if (!canAccessTab(currentRole, tab)) return; setActiveTab(tab); }} role={currentRole} lang={lang} /></div>;
 }
 
@@ -1042,9 +1042,18 @@ function nextDays(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toI
 function downloadCSV(filename, rows){ const cols=[...new Set(rows.flatMap(r=>Object.keys(r)))]; const csv=[cols.join(','),...rows.map(r=>cols.map(c=>`"${String(r[c]??'').replace(/"/g,'""')}"`).join(','))].join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url); }
 function contractHtml(p={}){ return `<!doctype html><html><head><title>Zmluva o ubytovaní</title><style>body{font-family:Arial;margin:40px;line-height:1.5}h1{font-size:24px}.box{border:1px solid #ddd;padding:16px;border-radius:12px;margin:16px 0}</style></head><body><h1>Zmluva o ubytovaní – StayHub</h1><div class="box"><b>Ubytovaný:</b> ${p.first_name||''} ${p.last_name||''}<br/><b>Pas/OP:</b> ${p.passport_no||''}<br/><b>Národnosť:</b> ${p.nationality||''}<br/><b>Lôžko:</b> ${bedLabel(p)}<br/><b>Check-in:</b> ${p.checkin_at||''}<br/><b>Očakávaný odchod:</b> ${p.expected_checkout_date||''}</div><p>Ubytovaný potvrdzuje prevzatie ubytovania, kľúčov a oboznámenie sa s domovým poriadkom.</p><br/><br/><table width="100%"><tr><td>____________________<br/>Podpis ubytovaného</td><td align="right">____________________<br/>Prevádzkovateľ</td></tr></table></body></html>`; }
 
-function SettingsTab({ role }){
+function SettingsTab({ role, lang='sk', setLang }){
   return <div className="space-y-6">
-    <h1 className="text-3xl font-bold">⚙️ Nastavenia</h1>
+    <h1 className="text-3xl font-bold">⚙️ {t('Nastavenia', lang)}</h1>
+    <div className="mobile-language-panel bg-white rounded-3xl p-5 border border-slate-100 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">{t('Jazyk', lang)}</div>
+          <div className="text-lg font-black text-slate-950">SK / EN / VI</div>
+        </div>
+        <LanguageSwitcher lang={lang} setLang={setLang} />
+      </div>
+    </div>
     <div className="bg-white rounded-xl p-8 space-y-5">
       <div>
         <h2 className="text-xl font-black">Právomoci používateľov</h2>

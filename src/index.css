@@ -1916,3 +1916,23 @@ body {
     border-radius: 22px;
   }
 }
+
+/* v6.3.2 – mobile language switcher restore */
+.mobile-language-panel {
+  display: none;
+}
+@media (max-width: 1023px) {
+  .stayhub-v6 .mobile-language-panel {
+    display: block !important;
+    width: min(100%, 520px);
+    margin-inline: auto;
+  }
+  .stayhub-v6 .mobile-language-panel .lang-switcher {
+    position: static !important;
+    right: auto !important;
+    bottom: auto !important;
+    box-shadow: none !important;
+    z-index: auto !important;
+    display: inline-flex !important;
+  }
+}
