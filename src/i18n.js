@@ -442,6 +442,179 @@ export const dictionaries = {
   },
 };
 
+// v6.0C – strict UI language layer. Keep new Apple UI labels in one place.
+Object.assign(dictionaries.vi, {
+  "Hlavná navigácia": "Điều hướng chính",
+  "Dnes": "Hôm nay",
+  "Viac": "Thêm",
+  "Smart Accommodation": "Quản lý lưu trú thông minh",
+  "Hľadať hosťa, firmu, izbu alebo rezerváciu…": "Tìm khách, công ty, phòng hoặc đặt chỗ…",
+  "StayHub v6.0B": "StayHub v6.0B",
+  "Začať Check-in": "Bắt đầu nhận phòng",
+  "Nová rezervácia": "Đặt chỗ mới",
+  "Príchody": "Khách đến",
+  "Odchody": "Khách đi",
+  "dnes": "hôm nay",
+  "Neuhradené": "Chưa thanh toán",
+  "Príchody dnes": "Khách đến hôm nay",
+  "Odchody dnes": "Khách đi hôm nay",
+  "Otvoriť": "Mở",
+  "Dnes nie sú naplánované žiadne príchody.": "Hôm nay không có khách đến.",
+  "Dnes nie sú naplánované žiadne odchody.": "Hôm nay không có khách đi.",
+  "os.": "người",
+  "Uhradené": "Đã thanh toán",
+  "Zostáva": "Còn lại",
+  "Lôžka:": "Giường:",
+  "nepriradené": "chưa phân",
+  "Pridať platbu": "Thêm thanh toán",
+  "História platieb": "Lịch sử thanh toán",
+  "platba": "thanh toán",
+  "Čaká na check-in": "Chờ nhận phòng",
+  "Dnešné check-out": "Trả phòng hôm nay",
+  "Jedna pracovná obrazovka pre recepciu: rezervácie, ktoré čakajú na príchod, majú tlačidlo": "Một màn hình làm việc cho lễ tân: đặt chỗ chờ đến có nút",
+  "Ubytované osoby majú tlačidlo": "Người đang ở có nút",
+  "Po check-oute sa lôžko uvoľní automaticky.": "Sau khi trả phòng, giường tự động trống.",
+  "Príchody / Check-in": "Khách đến / Nhận phòng",
+  "Odchody / Check-out": "Khách đi / Trả phòng",
+  "čaká na príchod": "chờ đến",
+  "ubytovaných": "đang ở",
+  "Dnes má odísť": "Hôm nay có",
+  "osoba/osôb.": "người trả phòng.",
+  "Žiadne rezervácie na check-in.": "Không có đặt chỗ để nhận phòng.",
+  "Momentálne nie je nikto ubytovaný.": "Hiện không có ai đang ở.",
+  "Bez mena": "Chưa có tên",
+  "doklad nezadaný": "chưa có giấy tờ",
+  "Očakávaný odchod": "Ngày đi dự kiến",
+  "Akcia": "Thao tác",
+  "Termín": "Thời gian",
+  "Firma/platiteľ": "Công ty/người trả tiền",
+  "Vyplnené": "Đã điền",
+  "Táto rezervácia nemá pridelené lôžka. Najprv v rezervácii prideľ lôžka.": "Đặt chỗ này chưa được phân giường. Hãy phân giường trong đặt chỗ trước.",
+  "Doklad totožnosti": "Giấy tờ tùy thân",
+  "Nahraj fotku/PDF z počítača alebo odfoť mobilom. Potom klikni na AI OCR.": "Tải ảnh/PDF từ máy tính hoặc chụp bằng điện thoại. Sau đó bấm AI OCR.",
+  "Nahrať / odfotiť": "Tải lên / chụp",
+  "Nahrávam…": "Đang tải…",
+  "Nahratý doklad": "Giấy tờ đã tải lên",
+  "Skontrolovať fotku": "Kiểm tra ảnh",
+  "AI číta…": "AI đang đọc…",
+  "OCR spracované. Skontroluj údaje pred potvrdením.": "OCR đã xử lý. Kiểm tra thông tin trước khi xác nhận.",
+  "Čaká na údaje": "Chờ thông tin",
+  "OCR hotové": "OCR xong",
+  "Check-in osoba": "Người nhận phòng",
+  "Vyber osobu / lôžko": "Chọn người / giường",
+  "Vyber osobu/lôžko → Pas alebo Občiansky preukaz → nahrať/fotiť → AI OCR → Potvrdiť check-in.": "Chọn người/giường → Hộ chiếu hoặc CMND/CCCD → tải lên/chụp → AI OCR → Xác nhận nhận phòng.",
+  "Voľné:": "Trống:",
+  "Súbor je príliš veľký. Maximum je 8 MB.": "Tệp quá lớn. Tối đa 8 MB.",
+  "Upload dokumentu zlyhal.": "Tải giấy tờ thất bại.",
+  "Najprv nahraj alebo odfoť doklad.": "Trước tiên hãy tải lên hoặc chụp giấy tờ.",
+  "AI OCR zlyhalo.": "AI OCR thất bại.",
+  "Vyber osobu a doplň údaje alebo spusti AI OCR.": "Chọn người và điền thông tin hoặc chạy AI OCR.",
+  "Počet osôb": "Số người",
+  "prekračuje kapacitu rezervácie": "vượt quá sức chứa của đặt chỗ",
+  "Jedno lôžko je použité viackrát. Skontroluj check-in osoby.": "Một giường được dùng nhiều lần. Kiểm tra người nhận phòng.",
+  "Check-out bol uložený a lôžko sa uvoľnilo.": "Đã lưu trả phòng và giường đã được giải phóng.",
+  "Poznámka:": "Ghi chú:",
+  "Pridať platbu k rezervácii": "Thêm thanh toán vào đặt chỗ",
+  "Spôsob platby": "Phương thức thanh toán",
+  "Hotovosť": "Tiền mặt",
+  "Karta": "Thẻ",
+  "Bankový prevod": "Chuyển khoản",
+  "Iné": "Khác",
+  "Za čo": "Thanh toán cho",
+  "Celá rezervácia": "Toàn bộ đặt chỗ",
+  "Konkrétna osoba": "Người cụ thể",
+  "Kaucia": "Tiền cọc",
+  "Doplatok / iné": "Phụ thu / khác",
+  "Scany spolu": "Tổng bản scan",
+  "OCR poznámka": "Ghi chú OCR",
+  "Otvoriť": "Mở"
+});
+
+Object.assign(dictionaries.en, {
+  "Hlavná navigácia": "Main navigation",
+  "Dnes": "Today",
+  "Viac": "More",
+  "Smart Accommodation": "Smart Accommodation",
+  "Hľadať hosťa, firmu, izbu alebo rezerváciu…": "Search guest, company, room or reservation…",
+  "Začať Check-in": "Start check-in",
+  "Nová rezervácia": "New reservation",
+  "Príchody": "Arrivals",
+  "Odchody": "Departures",
+  "dnes": "today",
+  "Neuhradené": "Unpaid",
+  "Príchody dnes": "Arrivals today",
+  "Odchody dnes": "Departures today",
+  "Otvoriť": "Open",
+  "Dnes nie sú naplánované žiadne príchody.": "No arrivals scheduled today.",
+  "Dnes nie sú naplánované žiadne odchody.": "No departures scheduled today.",
+  "os.": "people",
+  "Uhradené": "Paid",
+  "Zostáva": "Remaining",
+  "Lôžka:": "Beds:",
+  "nepriradené": "unassigned",
+  "Pridať platbu": "Add payment",
+  "História platieb": "Payment history",
+  "platba": "payment",
+  "Čaká na check-in": "Waiting for check-in",
+  "Dnešné check-out": "Today’s check-outs",
+  "Jedna pracovná obrazovka pre recepciu: rezervácie, ktoré čakajú na príchod, majú tlačidlo": "One reception workspace: reservations waiting for arrival have a",
+  "Ubytované osoby majú tlačidlo": "Checked-in people have a",
+  "Po check-oute sa lôžko uvoľní automaticky.": "After check-out, the bed is released automatically.",
+  "Príchody / Check-in": "Arrivals / Check-in",
+  "Odchody / Check-out": "Departures / Check-out",
+  "čaká na príchod": "waiting for arrival",
+  "ubytovaných": "checked in",
+  "Dnes má odísť": "Today",
+  "osoba/osôb.": "person(s) should check out.",
+  "Žiadne rezervácie na check-in.": "No reservations for check-in.",
+  "Momentálne nie je nikto ubytovaný.": "No one is currently checked in.",
+  "Bez mena": "No name",
+  "doklad nezadaný": "document missing",
+  "Očakávaný odchod": "Expected departure",
+  "Akcia": "Action",
+  "Termín": "Date range",
+  "Firma/platiteľ": "Company/payer",
+  "Vyplnené": "Filled",
+  "Táto rezervácia nemá pridelené lôžka. Najprv v rezervácii prideľ lôžka.": "This reservation has no assigned beds. Assign beds in the reservation first.",
+  "Doklad totožnosti": "Identity document",
+  "Nahraj fotku/PDF z počítača alebo odfoť mobilom. Potom klikni na AI OCR.": "Upload a photo/PDF from computer or take a photo on mobile. Then click AI OCR.",
+  "Nahrať / odfotiť": "Upload / take photo",
+  "Nahrávam…": "Uploading…",
+  "Nahratý doklad": "Uploaded document",
+  "Skontrolovať fotku": "Check photo",
+  "AI číta…": "AI is reading…",
+  "OCR spracované. Skontroluj údaje pred potvrdením.": "OCR processed. Check the details before confirming.",
+  "Čaká na údaje": "Waiting for details",
+  "OCR hotové": "OCR done",
+  "Check-in osoba": "Check-in person",
+  "Vyber osobu / lôžko": "Select person / bed",
+  "Vyber osobu/lôžko → Pas alebo Občiansky preukaz → nahrať/fotiť → AI OCR → Potvrdiť check-in.": "Select person/bed → Passport or ID card → upload/photo → AI OCR → Confirm check-in.",
+  "Voľné:": "Free:",
+  "Súbor je príliš veľký. Maximum je 8 MB.": "File is too large. Maximum is 8 MB.",
+  "Upload dokumentu zlyhal.": "Document upload failed.",
+  "Najprv nahraj alebo odfoť doklad.": "Upload or photograph the document first.",
+  "AI OCR zlyhalo.": "AI OCR failed.",
+  "Vyber osobu a doplň údaje alebo spusti AI OCR.": "Select a person and fill details or run AI OCR.",
+  "prekračuje kapacitu rezervácie": "exceeds reservation capacity",
+  "Jedno lôžko je použité viackrát. Skontroluj check-in osoby.": "One bed is used more than once. Check check-in people.",
+  "Check-out bol uložený a lôžko sa uvoľnilo.": "Check-out saved and the bed was released.",
+  "Poznámka:": "Note:",
+  "Pridať platbu k rezervácii": "Add payment to reservation",
+  "Spôsob platby": "Payment method",
+  "Hotovosť": "Cash",
+  "Karta": "Card",
+  "Bankový prevod": "Bank transfer",
+  "Iné": "Other",
+  "Za čo": "Payment for",
+  "Celá rezervácia": "Whole reservation",
+  "Konkrétna osoba": "Specific person",
+  "Kaucia": "Deposit",
+  "Doplatok / iné": "Surcharge / other",
+  "Scany spolu": "Total scans",
+  "OCR poznámka": "OCR note"
+});
+
+
 function escapeRegExp(string) {
   return String(string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -467,7 +640,7 @@ export function translateDom(lang) {
     acceptNode(node) {
       const parent = node.parentElement;
       if (!parent) return NodeFilter.FILTER_REJECT;
-      if (['SCRIPT','STYLE','TEXTAREA','INPUT','OPTION'].includes(parent.tagName)) return NodeFilter.FILTER_REJECT;
+      if (['SCRIPT','STYLE','TEXTAREA','INPUT'].includes(parent.tagName)) return NodeFilter.FILTER_REJECT;
       const text = node.nodeValue || '';
       if (!text.trim()) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
@@ -479,6 +652,20 @@ export function translateDom(lang) {
     const sk=node.__skText || node.nodeValue;
     node.__skText=sk;
     node.nodeValue=translateText(sk, lang);
+  });
+  root.querySelectorAll('option').forEach(el=>{
+    const sk=el.__skText || el.textContent;
+    el.__skText=sk;
+    el.textContent=translateText(sk, lang);
+  });
+  root.querySelectorAll('[title], [aria-label]').forEach(el=>{
+    ['title','aria-label'].forEach(attr=>{
+      if(!el.hasAttribute(attr)) return;
+      const key='__sk_'+attr;
+      const sk=el[key] || el.getAttribute(attr);
+      el[key]=sk;
+      el.setAttribute(attr, translateText(sk, lang));
+    });
   });
   root.querySelectorAll('input[placeholder], textarea[placeholder]').forEach(el=>{
     const sk=el.__skPlaceholder || el.getAttribute('placeholder');
