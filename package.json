@@ -1,6 +1,6 @@
 {
-  "name": "stayhub-v6-workflow-sync-engine",
-  "version": "6.1.0",
+  "name": "stayhub-v6-smart-checkin-ai-ocr",
+  "version": "6.2.0",
   "private": true,
   "type": "module",
   "scripts": {
