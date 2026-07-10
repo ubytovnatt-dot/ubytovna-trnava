@@ -1,6 +1,6 @@
 {
   "name": "stayhub-lts-sprint-1-core-modules",
-  "version": "6.5.3-security",
+  "version": "6.6.0-security",
   "private": true,
   "type": "module",
   "scripts": {
@@ -26,6 +26,6 @@
     "vite": "5.4.11"
   },
   "engines": {
-    "node": "20.x"
+    "node": "22.x"
   }
 }
