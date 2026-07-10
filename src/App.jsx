@@ -163,7 +163,7 @@ export default function UbytovnaApp() {
   const [people, setPeople] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [stats, setStats] = useState({});
-  const [lang, setLang] = useState(() => localStorage.getItem('stayhub_lang') || 'sk');
+  const [lang, setLang] = useState('sk'); // default vzdy SK; prepnutie len pocas relacie
   const [selectedPropertyId, setSelectedPropertyId] = useState(() => localStorage.getItem('stayhub_property') || DEFAULT_PROPERTIES[0].id);
   const [currentRole, setCurrentRole] = useState('reception');
   const selectedProperty = DEFAULT_PROPERTIES.find((p) => p.id === selectedPropertyId) || DEFAULT_PROPERTIES[0];
@@ -214,7 +214,6 @@ export default function UbytovnaApp() {
 
   function changeLang(code) {
     setLang(code);
-    localStorage.setItem('stayhub_lang', code);
     setCurrentLang(code);
   }
 
