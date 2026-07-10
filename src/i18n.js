@@ -651,6 +651,10 @@ Object.assign(dictionaries.vi, {"voľných": "trống", "voľné lôžka": "giư
 
 Object.assign(dictionaries.en, {"voľných": "free", "voľné lôžka": "free beds"});
 
+Object.assign(dictionaries.vi, {"Príliš veľa pokusov. Skús to o chvíľu.": "Quá nhiều lần thử. Hãy thử lại sau."});
+
+Object.assign(dictionaries.en, {"Príliš veľa pokusov. Skús to o chvíľu.": "Too many attempts. Please try again shortly."});
+
 function escapeRegExp(string) {
   return String(string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
