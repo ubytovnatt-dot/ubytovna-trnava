@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Home } from 'lucide-react';
+import { getCurrentLang } from '../../i18n.js';
 import {
   overlapsDates as engineOverlapsDates,
   addDays as engineAddDays,
@@ -7,6 +8,11 @@ import {
   parseBeds,
   activePeople,
 } from '../../core/reservationEngine.js';
+
+const CAL_LOCALE = { sk: 'sk-SK', vi: 'vi-VN', en: 'en-GB' };
+const CAL_WEEKDAYS = { sk: ['Po','Ut','St','Št','Pi','So','Ne'], vi: ['T2','T3','T4','T5','T6','T7','CN'], en: ['Mo','Tu','We','Th','Fr','Sa','Su'] };
+const calLocale = () => CAL_LOCALE[getCurrentLang()] || 'sk-SK';
+const calWeekdays = () => CAL_WEEKDAYS[getCurrentLang()] || CAL_WEEKDAYS.sk;
 
 function isoDate(date) {
   const y = date.getFullYear();
@@ -38,11 +44,11 @@ function addMonths(value, amount) {
 }
 
 function monthLabel(value) {
-  return new Intl.DateTimeFormat('sk-SK', { month: 'long', year: 'numeric' }).format(new Date(`${startOfMonth(value)}T12:00:00`));
+  return new Intl.DateTimeFormat(calLocale(), { month: 'long', year: 'numeric' }).format(new Date(`${startOfMonth(value)}T12:00:00`));
 }
 
 function dayLabel(value) {
-  return new Intl.DateTimeFormat('sk-SK', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(new Date(`${value}T12:00:00`));
+  return new Intl.DateTimeFormat(calLocale(), { weekday: 'short', day: '2-digit', month: '2-digit' }).format(new Date(`${value}T12:00:00`));
 }
 
 function dayNumber(value) {
@@ -162,7 +168,7 @@ function DayPill({ day, selected, stats, onClick }) {
   const isToday = day === today();
   const status = stats.conflicts ? 'bad' : stats.free === 0 ? 'full' : stats.occupied > 0 ? 'busy' : 'free';
   return <button className={`mini-cal-day ${selected ? 'selected' : ''} ${status}`} onClick={onClick}>
-    <small>{dayLabel(day)}</small>
+    <small data-i18n-skip>{dayLabel(day)}</small>
     <b>{dayNumber(day)}</b>
     <span>{stats.free} voľné</span>
     {isToday && <em>Dnes</em>}
@@ -222,7 +228,7 @@ export default function AuroraCalendar({ rooms = [], bookings = [], people = [] 
     </div>
 
     <div className="mini-cal-summary">
-      <div><small>Vybraný deň</small><b>{dayLabel(selectedDay)}</b></div>
+      <div><small>Vybraný deň</small><b data-i18n-skip>{dayLabel(selectedDay)}</b></div>
       <div><small>Obsadené</small><b>{selectedStats.occupied}/{selectedStats.beds}</b></div>
       <div><small>Voľné</small><b>{selectedStats.free}</b></div>
       <div><small>Príchody</small><b>{selectedStats.arrivals}</b></div>
@@ -241,7 +247,7 @@ export default function AuroraCalendar({ rooms = [], bookings = [], people = [] 
 
     <div className="mini-cal-card">
       <div className="mini-cal-card-head">
-        <h3>Izby v deň {dayLabel(selectedDay)}</h3>
+        <h3>Izby v deň <span data-i18n-skip>{dayLabel(selectedDay)}</span></h3>
         <span>{selectedStats.free} voľných lôžok</span>
       </div>
       <div className="mini-cal-rooms">
@@ -252,10 +258,10 @@ export default function AuroraCalendar({ rooms = [], bookings = [], people = [] 
     <div className="mini-cal-card mini-cal-month-card">
       <div className="mini-cal-card-head">
         <button onClick={() => shiftMonth(-1)} aria-label="Predchádzajúci mesiac"><ChevronLeft size={18} /></button>
-        <h3>{monthLabel(anchor)}</h3>
+        <h3 data-i18n-skip>{monthLabel(anchor)}</h3>
         <button onClick={() => shiftMonth(1)} aria-label="Ďalší mesiac"><ChevronRight size={18} /></button>
       </div>
-      <div className="mini-cal-weekdays">{['Po', 'Ut', 'St', 'Št', 'Pi', 'So', 'Ne'].map((d) => <b key={d}>{d}</b>)}</div>
+      <div className="mini-cal-weekdays" data-i18n-skip>{calWeekdays().map((d) => <b key={d}>{d}</b>)}</div>
       <div className="mini-cal-month">
         {monthDays.map((day) => {
           const stats = getDailyStats(day, sortedRooms, activeBookings, activeGuests);
