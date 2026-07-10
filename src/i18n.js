@@ -639,6 +639,10 @@ Object.assign(dictionaries.vi, {"Obsadené": "Đã kín", "Plné": "Đầy", "Pr
 
 Object.assign(dictionaries.en, {"Obsadené": "Occupied", "Plné": "Full", "Predchádzajúci mesiac": "Previous month", "Príchody": "Arrivals", "Odchody": "Departures", "Vybraný deň": "Selected day"});
 
+Object.assign(dictionaries.vi, {"Izby v deň": "Phòng trong ngày"});
+
+Object.assign(dictionaries.en, {"Izby v deň": "Rooms on day"});
+
 function escapeRegExp(string) {
   return String(string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -657,6 +661,7 @@ function translateText(text, lang) {
 
 let __cur = 'sk';
 export function setCurrentLang(l){ __cur = l || 'sk'; }
+export function getCurrentLang(){ return __cur; }
 export function tt(s){ return translateText(String(s == null ? '' : s), __cur); }
 export function alertT(s){ if (typeof window !== 'undefined') window.alert(tt(s)); }
 export function confirmT(s){ return typeof window !== 'undefined' ? window.confirm(tt(s)) : true; }
@@ -677,6 +682,7 @@ export function translateDom(lang) {
       const parent = node.parentElement;
       if (!parent) return NodeFilter.FILTER_REJECT;
       if (['SCRIPT','STYLE','TEXTAREA','INPUT'].includes(parent.tagName)) return NodeFilter.FILTER_REJECT;
+      if (parent.closest && parent.closest('[data-i18n-skip]')) return NodeFilter.FILTER_REJECT;
       const text = node.nodeValue || '';
       if (!text.trim()) return NodeFilter.FILTER_REJECT;
       // v6.4.4: neprekladaj/necachuj cisto ciselne uzly (ceny, pocty, %),
