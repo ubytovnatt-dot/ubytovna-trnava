@@ -97,3 +97,6 @@ Before production OCR, confirm that Supabase Storage has the private bucket `sta
 supabase/migrations/20260627_stayhub_v5_1_core_architecture.sql
 ```
 commit changes do main
+
+
+<!-- deploy trigger v6.4.9 2026-07-10 -->
