@@ -1,0 +1,6 @@
+<svg width="260" height="84" viewBox="0 0 260 84" xmlns="http://www.w3.org/2000/svg">
+  <rect x="8" y="10" width="64" height="64" rx="14" fill="#0B0B0D" stroke="#C8A96B" stroke-opacity="0.35"/>
+  <text x="40" y="51" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800" fill="#C8A96B">SH</text>
+  <text x="88" y="38" font-family="Inter, Arial, sans-serif" font-size="25" font-weight="800" fill="#F8F6F2">StayHub</text>
+  <text x="88" y="59" font-family="Inter, Arial, sans-serif" font-size="11" font-weight="600" letter-spacing="1.6" fill="#D1D5DB">SMART ACCOMMODATION</text>
+</svg>
