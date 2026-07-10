@@ -7,6 +7,28 @@ const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || 'https://ubytovna-t
 app.use(cors({ origin(origin, cb) { if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true); return cb(new Error('CORS: origin not allowed')); }, credentials: false }));
 app.use(express.json({ limit: '15mb' }));
 
+// --- jednoduchy rate limiting (obrana proti hadaniu/zneuzitiu citlivych endpointov) ---
+// Pozn.: in-memory per instanciu (serverless) - je to druha linia; prihlasenie limituje aj Supabase Auth.
+const __rlStore = new Map();
+function rateLimit({ windowMs = 60000, max = 60, name = 'rl' } = {}) {
+  return (req, res, next) => {
+    const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || (req.socket && req.socket.remoteAddress) || 'unknown';
+    const key = name + ':' + ip;
+    const now = Date.now();
+    let rec = __rlStore.get(key);
+    if (!rec || now > rec.reset) rec = { count: 0, reset: now + windowMs };
+    rec.count += 1;
+    __rlStore.set(key, rec);
+    if (rec.count > max) {
+      res.setHeader('Retry-After', Math.ceil((rec.reset - now) / 1000));
+      return res.status(429).json({ success: false, error: 'Príliš veľa pokusov. Skús to o chvíľu.' });
+    }
+    return next();
+  };
+}
+app.use('/api/auth', rateLimit({ windowMs: 60000, max: 60, name: 'auth' }));
+app.use('/api/admin', rateLimit({ windowMs: 60000, max: 10, name: 'admin' }));
+
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '';
 const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
