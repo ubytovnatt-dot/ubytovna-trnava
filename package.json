@@ -1,6 +1,6 @@
 {
   "name": "stayhub-lts-sprint-1-core-modules",
-  "version": "6.4.10-security",
+  "version": "6.4.11-security",
   "private": true,
   "type": "module",
   "scripts": {
