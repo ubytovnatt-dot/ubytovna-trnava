@@ -1,102 +1,155 @@
-# StayHub v4.1
+# Foodland AI Agent
 
-Clean GitHub version for StayHub v4.1 with Unified Reservation Engine and Document Center.
+Deployment-ready backend a embeddable widget pre Foodland AI poradcu.
 
-## Install
+Backend vie:
+
+- nacitat produkty z `data/products.json` alebo Google Merchant XML feedu,
+- nacitat Foodland knowledge databazu z `data/knowledge.json`,
+- vyhladavat produkty podla nazvu, znacky, kategorie a popisu,
+- vyhladavat FAQ, recepty, magazin, cross-sell, alternativy a `Products_AI`,
+- odpovedat cez OpenAI, ak je nastavene `OPENAI_API_KEY`,
+- fungovat aj bez OpenAI kluca ako produktovy vyhladavac,
+- limitovat pocet otazok na klienta,
+- zapisovat anonymizovanu analytiku otazok do JSONL suboru,
+- servirovat chat widget cez `/static/widget.js`.
+
+## Struktura
+
+```text
+app/
+  feed.py           Parser Google Merchant XML feedu
+  search.py         Lokalne produktove vyhladavanie
+  knowledge.py      Knowledge vyhladavanie
+  main.py           FastAPI backend
+  import_feed.py    Import XML feedu do JSON
+  widget.js         Embeddable chat widget
+  widget.html       Demo stranka widgetu
+data/
+  products.json     Produktovy export
+  knowledge.json    Foodland knowledge export
+docs/
+  deployment-checklist.md
+scripts/
+  check_deployment.py
+```
+
+## Lokalne spustenie
+
+1. Vytvorte `.env` podla `.env.example`.
+2. Nainstalujte zavislosti:
 
 ```bash
-npm install
-npm run dev
+pip install -r requirements.txt
 ```
 
-## Build
+3. Spustite backend:
 
 ```bash
-npm run build
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## Project structure
+4. Otestujte:
 
 ```text
-src/
-  core/                  # Unified Reservation Engine
-  modules/
-    calendar/            # Aurora Calendar
-    documents/           # Document Center module area
-    dashboard/
-    reservations/
-    rooms/
-    payments/
-    companies/
-    reports/
-  services/
-    supabase/
-    storage/
-  components/
-  hooks/
-  utils/
-
-api/                     # Vercel serverless API
-supabase/migrations/     # Supabase SQL migrations
-docs/                    # Current project notes and changelogs
+GET  http://localhost:8000/health
+POST http://localhost:8000/products/search
+POST http://localhost:8000/knowledge/search
+POST http://localhost:8000/chat
+GET  http://localhost:8000/static/widget.html
 ```
 
-## Supabase Document Storage
+Priklad requestu:
 
-Run the SQL migration:
+```json
+{
+  "message": "mate miso polievku?",
+  "limit": 5
+}
+```
+
+## Deployment
+
+Odporucane prostredie: Railway alebo Render.
+
+Build command:
+
+```bash
+pip install -r requirements.txt
+```
+
+Start command:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+`Procfile` a `railway.json` su uz pripravene.
+
+## Env pre produkciu
 
 ```text
-supabase/migrations/20260627_stayhub_v4_1_documents_storage.sql
+OPENAI_API_KEY=<secret>
+OPENAI_MODEL=gpt-4.1-mini
+PRODUCTS_JSON_PATH=data/products.json
+PRODUCT_FEED_PATH=https://www.foodland.sk/ed3d2c21991e3bef5e069713af9fa6ca/googleMerchant_sk_export.xml
+KNOWLEDGE_JSON_PATH=data/knowledge.json
+FEED_REFRESH_MINUTES=180
+ALLOWED_ORIGINS=https://www.foodland.sk,https://foodland.sk
+RATE_LIMIT_PER_MINUTE=12
+ANALYTICS_LOG_PATH=data/question_analytics.jsonl
+ERROR_LOG_PATH=data/backend_errors.jsonl
+ANALYTICS_INCLUDE_IP=false
+ANALYTICS_SALT=<nahodny tajny retazec>
+ADMIN_RELOAD_TOKEN=<volitelne>
+LOG_LEVEL=INFO
 ```
 
-Required environment variables are listed in `.env.example`.
+Ak `OPENAI_API_KEY` nie je nastaveny, `/chat` vrati fallback odpoved z lokalneho vyhladavania.
 
+## Widget embed
 
-## StayHub v4.2 Document Center
+Po nasadeni backendu vlozte do Foodland.sk:
 
-Document Center používa jeden private bucket `stayhub-private`. Priečinky sa nevytvárajú ručne v Supabase UI. Backend ich vytvorí automaticky pri uploade podľa štruktúry:
+```html
+<script>
+  window.FoodlandAI = {
+    apiBaseUrl: "https://ai.foodland.sk"
+  };
+</script>
+<script src="https://ai.foodland.sk/static/widget.js"></script>
+```
+
+Demo:
 
 ```text
-stayhub-private/
-  postova-3/
-    company-{company_id}/
-      person-{person_id}/
-        passport/
-        visa/
-        photos/
-        contract/
-        insurance/
-        work_permit/
-        other/
+https://<backend-domain>/static/widget.html
+https://<backend-domain>/static/widget.html?demo=1
 ```
 
-Pred deployom spusti migráciu:
+## Kontrola balika
+
+Pred nasadenim spustite:
+
+```bash
+python scripts/check_deployment.py
+python -m compileall app scripts
+```
+
+Kontrola overi, ze v baliku nie su zle pomenovane root subory, ze existuju deployment subory a ze textove subory neobsahuju typicke mojibake znaky.
+
+## Admin reload feedu
+
+Endpoint:
 
 ```text
-supabase/migrations/20260627_stayhub_v4_2_document_center_private_bucket.sql
+POST /admin/reload-feed
 ```
 
-Vo Verceli nastav:
+Header:
 
-```env
-SUPABASE_DOCUMENTS_BUCKET=stayhub-private
-SUPABASE_SERVICE_ROLE_KEY=...
+```text
+x-admin-token: <ADMIN_RELOAD_TOKEN>
 ```
 
-## StayHub v5.1 Core Architecture
-
-StayHub v5.1 uses reservation as the single source of truth. The existing tables remain compatible:
-
-- `bookings` = reservations
-- `checkin_persons` = persons
-- `stayhub-documents` = private document bucket for AI OCR uploads
-
-Before production OCR, confirm that Supabase Storage has the private bucket `stayhub-documents` and run:
-
-```sql
-supabase/migrations/20260627_stayhub_v5_1_core_architecture.sql
-```
-commit changes do main
-
-
-<!-- deploy trigger v6.4.9 2026-07-10 -->
+Ak `ADMIN_RELOAD_TOKEN` nie je nastaveny, admin reload je vypnuty.
