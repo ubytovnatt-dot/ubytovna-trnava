@@ -1,8 +1,9 @@
 {
   "version": 2,
-  "buildCommand": "vite build && mv dist/index.html dist/app.html && cp landing.html dist/index.html",
+  "buildCommand": "vite build && mv dist/index.html dist/app.html && cp web/index.html web/ubytovanie.html web/galeria.html web/kontakt.html web/styles.css dist/",
   "outputDirectory": "dist",
   "framework": "vite",
+  "cleanUrls": true,
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index.js" },
     { "source": "/rezervacie", "destination": "/app.html" },
