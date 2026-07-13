@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "vite build && mv dist/index.html dist/app.html && cp web/index.html web/ubytovanie.html web/galeria.html web/kontakt.html web/styles.css dist/",
+  "buildCommand": "vite build && mv dist/index.html dist/app.html && cp web/index.html web/ubytovanie.html web/cennik.html web/galeria.html web/kontakt.html web/styles.css dist/",
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
@@ -8,6 +8,7 @@
     { "source": "/rezervacie", "destination": "/app.html" },
     { "source": "/rezervacie/(.*)", "destination": "/app.html" },
     { "source": "/ubytovanie", "destination": "/ubytovanie.html" },
+    { "source": "/cennik", "destination": "/cennik.html" },
     { "source": "/galeria", "destination": "/galeria.html" },
     { "source": "/kontakt", "destination": "/kontakt.html" },
     { "source": "/(.*)", "destination": "/index.html" }
