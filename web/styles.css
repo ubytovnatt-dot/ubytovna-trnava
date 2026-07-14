@@ -31,20 +31,21 @@ header{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.92);backdro
 .nav-burger svg{width:24px;height:24px;display:block}
 .nav-burger .ico-close{display:none}
 .nav-burger:hover{border-color:#cbd5e1}
+.menu-login{display:none}
 
 @media(max-width:760px){
-  .nav{flex-wrap:wrap;height:auto;padding:12px 0;gap:8px;align-items:center}
+  .nav{height:auto;padding:12px 0;gap:8px;align-items:center;position:relative}
   .brand{font-size:17px;margin-right:auto}
   .tel{display:none}
+  .nav-actions{display:none}
   .nav-burger{display:inline-flex;order:2}
   .nav-toggle:checked + .nav-burger .ico-open{display:none}
   .nav-toggle:checked + .nav-burger .ico-close{display:block}
-  .menu{order:5;width:100%;margin:8px 0 0;padding-top:8px;border-top:1px solid var(--line);flex-direction:column;gap:2px;overflow:visible;display:none}
-  .menu a{padding:13px 12px;font-size:16px;border-radius:10px}
-  .nav-actions{order:6;width:100%;margin:0;display:none}
-  .nav-actions .btn{width:100%;justify-content:center;padding:13px}
+  .menu{display:none;position:absolute;top:calc(100% + 6px);left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 44px rgba(2,6,23,.16);padding:8px;z-index:40;flex-direction:column;gap:2px;margin:0;overflow:visible}
+  .menu a{padding:13px 14px;font-size:16px;border-radius:10px}
+  .menu-login{display:block;margin-top:6px;background:var(--brand);color:#fff;text-align:center;font-weight:800}
+  .menu-login:hover{background:var(--brand-dark);color:#fff}
   .nav-toggle:checked ~ .menu{display:flex}
-  .nav-toggle:checked ~ .nav-actions{display:flex}
   .hero{min-height:0}
   .hero-inner{padding:52px 0}
   .hero h1{font-size:clamp(24px,7.5vw,34px);margin-top:14px}
