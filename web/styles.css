@@ -26,14 +26,25 @@ header{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.92);backdro
 .btn-ghost{border-color:var(--line);color:var(--ink);background:#fff}
 .btn-ghost:hover{border-color:#cbd5e1}
 .btn-lg{padding:14px 22px;font-size:16px;border-radius:14px}
+.nav-toggle{display:none}
+.nav-burger{display:none;align-items:center;justify-content:center;width:44px;height:44px;border:1px solid var(--line);border-radius:12px;color:var(--ink);background:#fff;cursor:pointer;flex:none}
+.nav-burger svg{width:24px;height:24px;display:block}
+.nav-burger .ico-close{display:none}
+.nav-burger:hover{border-color:#cbd5e1}
+
 @media(max-width:760px){
-  .nav{flex-wrap:wrap;height:auto;padding:12px 0;gap:8px}
-  .brand{font-size:17px}
+  .nav{flex-wrap:wrap;height:auto;padding:12px 0;gap:8px;align-items:center}
+  .brand{font-size:17px;margin-right:auto}
   .tel{display:none}
-  .menu{order:3;width:100%;margin:6px 0 0;justify-content:center;flex-wrap:wrap;gap:4px;overflow:visible}
-  .menu a{padding:7px 11px;font-size:14px}
-  .nav-actions{margin-left:auto}
-  .btn{padding:9px 14px}
+  .nav-burger{display:inline-flex;order:2}
+  .nav-toggle:checked + .nav-burger .ico-open{display:none}
+  .nav-toggle:checked + .nav-burger .ico-close{display:block}
+  .menu{order:5;width:100%;margin:8px 0 0;padding-top:8px;border-top:1px solid var(--line);flex-direction:column;gap:2px;overflow:visible;display:none}
+  .menu a{padding:13px 12px;font-size:16px;border-radius:10px}
+  .nav-actions{order:6;width:100%;margin:0;display:none}
+  .nav-actions .btn{width:100%;justify-content:center;padding:13px}
+  .nav-toggle:checked ~ .menu{display:flex}
+  .nav-toggle:checked ~ .nav-actions{display:flex}
   .hero{min-height:0}
   .hero-inner{padding:52px 0}
   .hero h1{font-size:clamp(24px,7.5vw,34px);margin-top:14px}
